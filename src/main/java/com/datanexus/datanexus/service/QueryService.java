@@ -6,7 +6,7 @@ import com.datanexus.datanexus.dto.query.QuerySuggestionsRequest;
 import com.datanexus.datanexus.entity.DatabaseConnection;
 import com.datanexus.datanexus.entity.User;
 import com.datanexus.datanexus.exception.ApiException;
-import com.datanexus.datanexus.repository.DatabaseConnectionRepository;
+import com.datanexus.datanexus.utils.PSQLUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -17,16 +17,19 @@ import java.util.*;
 @RequiredArgsConstructor
 public class QueryService {
 
-    private final DatabaseConnectionRepository connectionRepository;
-
     public QueryResultDto executeQuery(ExecuteQueryRequest request, User user) {
         if (request.getConnectionIds().isEmpty()) {
             throw ApiException.badRequest("BAD_REQUEST", "At least one connection ID is required");
         }
 
         String connectionId = request.getConnectionIds().get(0);
-        DatabaseConnection conn = connectionRepository.findByIdAndUserId(connectionId, user.getId())
-                .orElseThrow(() -> ApiException.notFound("CONNECTION_NOT_FOUND", "Database connection not found"));
+        DatabaseConnection conn = PSQLUtil.getSingleResult(
+                "FROM DatabaseConnection dc WHERE dc.id = :id AND dc.user.id = :userId",
+                Map.of("id", connectionId, "userId", user.getId()),
+                DatabaseConnection.class);
+        if (conn == null) {
+            throw ApiException.notFound("CONNECTION_NOT_FOUND", "Database connection not found");
+        }
 
         String jdbcUrl = buildJdbcUrl(conn.getType(), conn.getHost(), conn.getPort(), conn.getDatabase());
         long startTime = System.currentTimeMillis();
