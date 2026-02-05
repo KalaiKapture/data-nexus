@@ -1,7 +1,7 @@
 package com.datanexus.datanexus.security;
 
 import com.datanexus.datanexus.entity.User;
-import com.datanexus.datanexus.repository.UserRepository;
+import com.datanexus.datanexus.utils.PSQLUtil;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -16,14 +16,13 @@ import org.springframework.web.filter.OncePerRequestFilter;
 
 import java.io.IOException;
 import java.util.Collections;
-import java.util.Optional;
+import java.util.Map;
 
 @Component
 @RequiredArgsConstructor
 public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
     private final JwtTokenProvider jwtTokenProvider;
-    private final UserRepository userRepository;
 
     @Override
     protected void doFilterInternal(HttpServletRequest request,
@@ -34,10 +33,12 @@ public class JwtAuthenticationFilter extends OncePerRequestFilter {
 
         if (StringUtils.hasText(token) && jwtTokenProvider.validateToken(token)) {
             String userId = jwtTokenProvider.getUserIdFromToken(token);
-            Optional<User> userOptional = userRepository.findById(userId);
+            User user = PSQLUtil.getSingleResult(
+                    "FROM User u WHERE u.id = :id",
+                    Map.of("id", userId),
+                    User.class);
 
-            if (userOptional.isPresent()) {
-                User user = userOptional.get();
+            if (user != null) {
                 UsernamePasswordAuthenticationToken authentication =
                         new UsernamePasswordAuthenticationToken(user, null, Collections.emptyList());
                 authentication.setDetails(new WebAuthenticationDetailsSource().buildDetails(request));

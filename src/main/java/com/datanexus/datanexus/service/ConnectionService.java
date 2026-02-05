@@ -4,10 +4,9 @@ import com.datanexus.datanexus.dto.connection.*;
 import com.datanexus.datanexus.entity.DatabaseConnection;
 import com.datanexus.datanexus.entity.User;
 import com.datanexus.datanexus.exception.ApiException;
-import com.datanexus.datanexus.repository.DatabaseConnectionRepository;
+import com.datanexus.datanexus.utils.PSQLUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.sql.Connection;
 import java.sql.DriverManager;
@@ -20,11 +19,12 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ConnectionService {
 
-    private final DatabaseConnectionRepository connectionRepository;
-
     public List<ConnectionDto> getUserConnections(User user) {
-        return connectionRepository.findByUserIdOrderByLastUsedDesc(user.getId())
-                .stream()
+        List<DatabaseConnection> connections = PSQLUtil.runQuery(
+                "FROM DatabaseConnection dc WHERE dc.user.id = :userId ORDER BY dc.lastUsed DESC",
+                Map.of("userId", user.getId()),
+                DatabaseConnection.class);
+        return connections.stream()
                 .map(this::toDto)
                 .collect(Collectors.toList());
     }
@@ -48,7 +48,6 @@ public class ConnectionService {
         }
     }
 
-    @Transactional
     public ConnectionDto createConnection(ConnectionRequest request, User user) {
         DatabaseConnection connection = DatabaseConnection.builder()
                 .name(request.getName())
@@ -65,14 +64,12 @@ public class ConnectionService {
                 .lastUsed(Instant.now())
                 .build();
 
-        connection = connectionRepository.save(connection);
+        connection = PSQLUtil.saveOrUpdateWithReturn(connection);
         return toDto(connection);
     }
 
-    @Transactional
     public ConnectionDto updateConnection(String connectionId, ConnectionRequest request, User user) {
-        DatabaseConnection connection = connectionRepository.findByIdAndUserId(connectionId, user.getId())
-                .orElseThrow(() -> ApiException.notFound("CONNECTION_NOT_FOUND", "Database connection not found"));
+        DatabaseConnection connection = getConnectionEntity(connectionId, user);
 
         if (request.getName() != null) connection.setName(request.getName());
         if (request.getHost() != null) connection.setHost(request.getHost());
@@ -82,23 +79,19 @@ public class ConnectionService {
         if (request.getPassword() != null) connection.setPassword(request.getPassword());
         connection.setLastUsed(Instant.now());
 
-        connection = connectionRepository.save(connection);
+        connection = PSQLUtil.saveOrUpdateWithReturn(connection);
         return toDto(connection);
     }
 
-    @Transactional
     public void deleteConnection(String connectionId, User user) {
-        DatabaseConnection connection = connectionRepository.findByIdAndUserId(connectionId, user.getId())
-                .orElseThrow(() -> ApiException.notFound("CONNECTION_NOT_FOUND", "Database connection not found"));
-        connectionRepository.delete(connection);
+        DatabaseConnection connection = getConnectionEntity(connectionId, user);
+        PSQLUtil.delete(connection);
     }
 
-    @Transactional
     public ConnectionDto updateLastUsed(String connectionId, User user) {
-        DatabaseConnection connection = connectionRepository.findByIdAndUserId(connectionId, user.getId())
-                .orElseThrow(() -> ApiException.notFound("CONNECTION_NOT_FOUND", "Database connection not found"));
+        DatabaseConnection connection = getConnectionEntity(connectionId, user);
         connection.setLastUsed(Instant.now());
-        connection = connectionRepository.save(connection);
+        connection = PSQLUtil.saveOrUpdateWithReturn(connection);
         return ConnectionDto.builder()
                 .id(connection.getId())
                 .lastUsed(connection.getLastUsed())
@@ -106,8 +99,14 @@ public class ConnectionService {
     }
 
     public DatabaseConnection getConnectionEntity(String connectionId, User user) {
-        return connectionRepository.findByIdAndUserId(connectionId, user.getId())
-                .orElseThrow(() -> ApiException.notFound("CONNECTION_NOT_FOUND", "Database connection not found"));
+        DatabaseConnection connection = PSQLUtil.getSingleResult(
+                "FROM DatabaseConnection dc WHERE dc.id = :id AND dc.user.id = :userId",
+                Map.of("id", connectionId, "userId", user.getId()),
+                DatabaseConnection.class);
+        if (connection == null) {
+            throw ApiException.notFound("CONNECTION_NOT_FOUND", "Database connection not found");
+        }
+        return connection;
     }
 
     public Map<String, Object> getSchema(String connectionId, User user) {

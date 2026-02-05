@@ -5,14 +5,12 @@ import com.datanexus.datanexus.dto.auth.*;
 import com.datanexus.datanexus.entity.RefreshToken;
 import com.datanexus.datanexus.entity.User;
 import com.datanexus.datanexus.exception.ApiException;
-import com.datanexus.datanexus.repository.RefreshTokenRepository;
-import com.datanexus.datanexus.repository.UserRepository;
 import com.datanexus.datanexus.security.JwtTokenProvider;
+import com.datanexus.datanexus.utils.PSQLUtil;
 import lombok.RequiredArgsConstructor;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
@@ -24,25 +22,28 @@ import java.util.UUID;
 @RequiredArgsConstructor
 public class AuthService {
 
-    private final UserRepository userRepository;
-    private final RefreshTokenRepository refreshTokenRepository;
     private final JwtTokenProvider jwtTokenProvider;
     private final PasswordEncoder passwordEncoder;
 
     @Value("${jwt.refresh-token-expiration:604800000}")
     private long refreshTokenExpiration;
 
-    @Transactional
     public AuthResponse login(LoginRequest request) {
-        User user = userRepository.findByUsername(request.getUsername())
-                .orElseThrow(() -> ApiException.unauthorized("INVALID_CREDENTIALS", "Invalid username or password"));
+        User user = PSQLUtil.getSingleResult(
+                "FROM User u WHERE u.username = :username",
+                Map.of("username", request.getUsername()),
+                User.class);
+
+        if (user == null) {
+            throw ApiException.unauthorized("INVALID_CREDENTIALS", "Invalid username or password");
+        }
 
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
             throw ApiException.unauthorized("INVALID_CREDENTIALS", "Invalid username or password");
         }
 
         user.setLastLogin(Instant.now());
-        userRepository.save(user);
+        PSQLUtil.saveOrUpdate(user);
 
         String accessToken = jwtTokenProvider.generateAccessToken(user.getId(), user.getUsername());
         String refreshToken = createRefreshToken(user);
@@ -55,12 +56,20 @@ public class AuthService {
                 .build();
     }
 
-    @Transactional
     public AuthResponse register(RegisterRequest request) {
-        if (userRepository.existsByUsername(request.getUsername())) {
+        User existingByUsername = PSQLUtil.getSingleResult(
+                "FROM User u WHERE u.username = :username",
+                Map.of("username", request.getUsername()),
+                User.class);
+        if (existingByUsername != null) {
             throw ApiException.conflict("Username already exists");
         }
-        if (userRepository.existsByEmail(request.getEmail())) {
+
+        User existingByEmail = PSQLUtil.getSingleResult(
+                "FROM User u WHERE u.email = :email",
+                Map.of("email", request.getEmail()),
+                User.class);
+        if (existingByEmail != null) {
             throw ApiException.conflict("Email already exists");
         }
 
@@ -70,7 +79,7 @@ public class AuthService {
                 .password(passwordEncoder.encode(request.getPassword()))
                 .build();
 
-        user = userRepository.save(user);
+        user = PSQLUtil.saveOrUpdateWithReturn(user);
 
         String accessToken = jwtTokenProvider.generateAccessToken(user.getId(), user.getUsername());
         String refreshToken = createRefreshToken(user);
@@ -94,17 +103,22 @@ public class AuthService {
         return dto;
     }
 
-    @Transactional
     public TokenResponse refreshToken(RefreshTokenRequest request) {
-        RefreshToken storedToken = refreshTokenRepository.findByTokenAndRevokedFalse(request.getRefreshToken())
-                .orElseThrow(() -> ApiException.unauthorized("UNAUTHORIZED", "Invalid refresh token"));
+        RefreshToken storedToken = PSQLUtil.getSingleResult(
+                "FROM RefreshToken rt WHERE rt.token = :token AND rt.revoked = false",
+                Map.of("token", request.getRefreshToken()),
+                RefreshToken.class);
+
+        if (storedToken == null) {
+            throw ApiException.unauthorized("UNAUTHORIZED", "Invalid refresh token");
+        }
 
         if (storedToken.getExpiresAt().isBefore(Instant.now())) {
             throw ApiException.unauthorized("TOKEN_EXPIRED", "Refresh token has expired");
         }
 
         storedToken.setRevoked(true);
-        refreshTokenRepository.save(storedToken);
+        PSQLUtil.saveOrUpdate(storedToken);
 
         User user = storedToken.getUser();
         String accessToken = jwtTokenProvider.generateAccessToken(user.getId(), user.getUsername());
@@ -116,9 +130,10 @@ public class AuthService {
                 .build();
     }
 
-    @Transactional
     public void logout(User user) {
-        refreshTokenRepository.revokeAllByUserId(user.getId());
+        PSQLUtil.runQueryForUpdate(
+                "UPDATE RefreshToken rt SET rt.revoked = true WHERE rt.user.id = :userId",
+                Map.of("userId", user.getId()));
     }
 
     private String createRefreshToken(User user) {
@@ -128,7 +143,7 @@ public class AuthService {
                 .expiresAt(Instant.now().plus(refreshTokenExpiration, ChronoUnit.MILLIS))
                 .revoked(false)
                 .build();
-        refreshTokenRepository.save(refreshToken);
+        PSQLUtil.saveOrUpdate(refreshToken);
         return refreshToken.getToken();
     }
 

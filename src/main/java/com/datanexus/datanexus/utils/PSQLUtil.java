@@ -5,10 +5,10 @@ import org.hibernate.Session;
 import org.hibernate.SessionFactory;
 import org.hibernate.Transaction;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Component;
 
-import jakarta.persistence.EntityManagerFactory;
 import jakarta.persistence.Query;
 import jakarta.persistence.TypedQuery;
 import java.sql.ResultSetMetaData;
@@ -22,8 +22,9 @@ public class PSQLUtil {
     private static JdbcTemplate jdbcTemplate;
 
     @Autowired
-    public PSQLUtil(EntityManagerFactory entityManagerFactory, JdbcTemplate jdbcTemplate) {
-        PSQLUtil.sessionFactory = entityManagerFactory.unwrap(SessionFactory.class);
+    public PSQLUtil(@Qualifier("psqlMainSessionFactory") SessionFactory factoryBean,
+                    @Qualifier("psqlMainJdbcTemplate") JdbcTemplate jdbcTemplate) {
+        PSQLUtil.sessionFactory = factoryBean;
         PSQLUtil.jdbcTemplate = jdbcTemplate;
     }
 
@@ -155,6 +156,22 @@ public class PSQLUtil {
         } catch (Exception e) {
             if (tx != null) tx.rollback();
             log.error("Exception in deleteList(): ", e);
+            return false;
+        }
+    }
+
+    public static <T> boolean delete(T entity) {
+        if (entity == null) return false;
+        Transaction tx = null;
+        try (Session session = sessionFactory.openSession()) {
+            tx = session.beginTransaction();
+            Object merged = session.merge(entity);
+            session.remove(merged);
+            tx.commit();
+            return true;
+        } catch (Exception e) {
+            if (tx != null) tx.rollback();
+            log.error("Error in delete(): ", e);
             return false;
         }
     }

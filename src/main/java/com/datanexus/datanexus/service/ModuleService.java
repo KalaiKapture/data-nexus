@@ -6,15 +6,14 @@ import com.datanexus.datanexus.entity.DatabaseConnection;
 import com.datanexus.datanexus.entity.Module;
 import com.datanexus.datanexus.entity.User;
 import com.datanexus.datanexus.exception.ApiException;
-import com.datanexus.datanexus.repository.DatabaseConnectionRepository;
-import com.datanexus.datanexus.repository.ModuleRepository;
+import com.datanexus.datanexus.utils.PSQLUtil;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -22,21 +21,26 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ModuleService {
 
-    private final ModuleRepository moduleRepository;
-    private final DatabaseConnectionRepository connectionRepository;
     private final ObjectMapper objectMapper;
 
     public List<ModuleDto> getUserModules(User user) {
-        return moduleRepository.findByUserIdOrderByCreatedAtDesc(user.getId())
-                .stream()
+        List<Module> modules = PSQLUtil.runQuery(
+                "FROM Module m WHERE m.user.id = :userId ORDER BY m.createdAt DESC",
+                Map.of("userId", user.getId()),
+                Module.class);
+        return modules.stream()
                 .map(this::toDto)
                 .collect(Collectors.toList());
     }
 
-    @Transactional
     public ModuleDto createModule(CreateModuleRequest request, User user) {
-        DatabaseConnection connection = connectionRepository.findByIdAndUserId(request.getConnectionId(), user.getId())
-                .orElseThrow(() -> ApiException.notFound("CONNECTION_NOT_FOUND", "Database connection not found"));
+        DatabaseConnection connection = PSQLUtil.getSingleResult(
+                "FROM DatabaseConnection dc WHERE dc.id = :id AND dc.user.id = :userId",
+                Map.of("id", request.getConnectionId(), "userId", user.getId()),
+                DatabaseConnection.class);
+        if (connection == null) {
+            throw ApiException.notFound("CONNECTION_NOT_FOUND", "Database connection not found");
+        }
 
         String dataJson;
         try {
@@ -57,30 +61,43 @@ public class ModuleService {
                 .views(0)
                 .build();
 
-        module = moduleRepository.save(module);
+        module = PSQLUtil.saveOrUpdateWithReturn(module);
         return toDto(module);
     }
 
     public ModuleDto getModuleByShareId(String shareId) {
-        Module module = moduleRepository.findByShareId(shareId)
-                .orElseThrow(() -> ApiException.notFound("MODULE_NOT_FOUND", "Module not found"));
+        Module module = PSQLUtil.getSingleResult(
+                "FROM Module m WHERE m.shareId = :shareId",
+                Map.of("shareId", shareId),
+                Module.class);
+        if (module == null) {
+            throw ApiException.notFound("MODULE_NOT_FOUND", "Module not found");
+        }
         return toDto(module);
     }
 
-    @Transactional
     public int incrementViews(String shareId) {
-        Module module = moduleRepository.findByShareId(shareId)
-                .orElseThrow(() -> ApiException.notFound("MODULE_NOT_FOUND", "Module not found"));
+        Module module = PSQLUtil.getSingleResult(
+                "FROM Module m WHERE m.shareId = :shareId",
+                Map.of("shareId", shareId),
+                Module.class);
+        if (module == null) {
+            throw ApiException.notFound("MODULE_NOT_FOUND", "Module not found");
+        }
         module.setViews(module.getViews() + 1);
-        moduleRepository.save(module);
+        PSQLUtil.saveOrUpdate(module);
         return module.getViews();
     }
 
-    @Transactional
     public void deleteModule(String moduleId, User user) {
-        Module module = moduleRepository.findByIdAndUserId(moduleId, user.getId())
-                .orElseThrow(() -> ApiException.notFound("MODULE_NOT_FOUND", "Module not found"));
-        moduleRepository.delete(module);
+        Module module = PSQLUtil.getSingleResult(
+                "FROM Module m WHERE m.id = :id AND m.user.id = :userId",
+                Map.of("id", moduleId, "userId", user.getId()),
+                Module.class);
+        if (module == null) {
+            throw ApiException.notFound("MODULE_NOT_FOUND", "Module not found");
+        }
+        PSQLUtil.delete(module);
     }
 
     private ModuleDto toDto(Module module) {
