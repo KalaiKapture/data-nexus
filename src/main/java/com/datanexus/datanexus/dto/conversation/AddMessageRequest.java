@@ -9,9 +9,8 @@ import lombok.*;
 @AllArgsConstructor
 public class AddMessageRequest {
 
-    @NotBlank(message = "Role is required")
-    private String role;
-
     @NotBlank(message = "Content is required")
     private String content;
+
+    private boolean sentByUser;
 }

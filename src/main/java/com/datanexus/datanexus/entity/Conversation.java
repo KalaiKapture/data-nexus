@@ -19,8 +19,8 @@ import java.util.List;
 public class Conversation {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    private String id;
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
 
     @Column(nullable = false)
     private String name;
@@ -29,10 +29,10 @@ public class Conversation {
     @CollectionTable(name = "conversation_connections", joinColumns = @JoinColumn(name = "conversation_id"))
     @Column(name = "connection_id")
     @Builder.Default
-    private List<String> connectionIds = new ArrayList<>();
+    private List<Long> connectionIds = new ArrayList<>();
 
     @OneToMany(mappedBy = "conversation", cascade = CascadeType.ALL, orphanRemoval = true)
-    @OrderBy("timestamp ASC")
+    @OrderBy("createdAt ASC")
     @Builder.Default
     private List<Message> messages = new ArrayList<>();
 

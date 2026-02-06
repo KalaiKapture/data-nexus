@@ -47,7 +47,7 @@ public class ConnectionController {
 
     @PutMapping("/{connectionId}")
     public ResponseEntity<ApiResponse<Map<String, ConnectionDto>>> updateConnection(
-            @PathVariable String connectionId,
+            @PathVariable Long connectionId,
             @Valid @RequestBody ConnectionRequest request,
             @AuthenticationPrincipal User user) {
         ConnectionDto connection = connectionService.updateConnection(connectionId, request, user);
@@ -56,7 +56,7 @@ public class ConnectionController {
 
     @DeleteMapping("/{connectionId}")
     public ResponseEntity<ApiResponse<Void>> deleteConnection(
-            @PathVariable String connectionId,
+            @PathVariable Long connectionId,
             @AuthenticationPrincipal User user) {
         connectionService.deleteConnection(connectionId, user);
         return ResponseEntity.ok(ApiResponse.success("Connection deleted successfully"));
@@ -64,7 +64,7 @@ public class ConnectionController {
 
     @PatchMapping("/{connectionId}/last-used")
     public ResponseEntity<ApiResponse<Map<String, ConnectionDto>>> updateLastUsed(
-            @PathVariable String connectionId,
+            @PathVariable Long connectionId,
             @AuthenticationPrincipal User user) {
         ConnectionDto connection = connectionService.updateLastUsed(connectionId, user);
         return ResponseEntity.ok(ApiResponse.success(Map.of("connection", connection)));
@@ -72,7 +72,7 @@ public class ConnectionController {
 
     @GetMapping("/{connectionId}/schema")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getSchema(
-            @PathVariable String connectionId,
+            @PathVariable Long connectionId,
             @AuthenticationPrincipal User user) {
         Map<String, Object> schema = connectionService.getSchema(connectionId, user);
         return ResponseEntity.ok(ApiResponse.success(Map.of("schema", schema)));

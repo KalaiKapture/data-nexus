@@ -13,7 +13,7 @@ import java.time.Instant;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class ConnectionDto {
 
-    private String id;
+    private Long id;
     private String name;
     private String type;
     private String typeName;

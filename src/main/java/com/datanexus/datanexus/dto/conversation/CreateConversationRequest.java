@@ -14,5 +14,5 @@ public class CreateConversationRequest {
     @NotBlank(message = "Name is required")
     private String name;
 
-    private List<String> connectionIds;
+    private List<Long> connectionIds;
 }

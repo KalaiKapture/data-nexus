@@ -20,7 +20,7 @@ public class RefreshTokenRepository {
         PSQLUtil.saveOrUpdate(refreshToken);
     }
 
-    public void revokeAllByUserId(String userId) {
+    public void revokeAllByUserId(Long userId) {
         PSQLUtil.runQueryForUpdate(
                 "UPDATE RefreshToken rt SET rt.revoked = true WHERE rt.user.id = :userId",
                 Map.of("userId", userId));

@@ -15,8 +15,6 @@ import org.springframework.stereotype.Service;
 
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
-import java.util.HashMap;
-import java.util.Map;
 import java.util.UUID;
 
 @Service
@@ -45,7 +43,7 @@ public class AuthService {
         user.setLastLogin(Instant.now());
         userRepository.save(user);
 
-        String accessToken = jwtTokenProvider.generateAccessToken(user.getId(), user.getUsername());
+        String accessToken = jwtTokenProvider.generateAccessToken(String.valueOf(user.getId()), user.getUsername());
         String refreshToken = createRefreshToken(user);
 
         return AuthResponse.builder()
@@ -72,7 +70,7 @@ public class AuthService {
 
         user = userRepository.save(user);
 
-        String accessToken = jwtTokenProvider.generateAccessToken(user.getId(), user.getUsername());
+        String accessToken = jwtTokenProvider.generateAccessToken(String.valueOf(user.getId()), user.getUsername());
         String refreshToken = createRefreshToken(user);
 
         return AuthResponse.builder()
@@ -84,14 +82,24 @@ public class AuthService {
     }
 
     public UserDto getUserDetails(User user) {
-        UserDto dto = toUserDto(user);
-        Map<String, Object> preferences = new HashMap<>();
-        preferences.put("theme", user.getPreferredTheme() != null ? user.getPreferredTheme() : "light");
-        if (user.getDefaultConnectionId() != null) {
-            preferences.put("defaultConnectionId", user.getDefaultConnectionId());
+        return toUserDto(user);
+    }
+
+    public UserDto updateUser(User user, String username, String email) {
+        if (username != null && !username.equals(user.getUsername())) {
+            if (userRepository.findByUsername(username) != null) {
+                throw ApiException.conflict("Username already exists");
+            }
+            user.setUsername(username);
         }
-        dto.setPreferences(preferences);
-        return dto;
+        if (email != null && !email.equals(user.getEmail())) {
+            if (userRepository.findByEmail(email) != null) {
+                throw ApiException.conflict("Email already exists");
+            }
+            user.setEmail(email);
+        }
+        user = userRepository.save(user);
+        return toUserDto(user);
     }
 
     public TokenResponse refreshToken(RefreshTokenRequest request) {
@@ -109,7 +117,7 @@ public class AuthService {
         refreshTokenRepository.save(storedToken);
 
         User user = storedToken.getUser();
-        String accessToken = jwtTokenProvider.generateAccessToken(user.getId(), user.getUsername());
+        String accessToken = jwtTokenProvider.generateAccessToken(String.valueOf(user.getId()), user.getUsername());
         String newRefreshToken = createRefreshToken(user);
 
         return TokenResponse.builder()
