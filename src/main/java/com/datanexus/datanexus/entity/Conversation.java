@@ -26,6 +26,7 @@ public class Conversation {
     @Column(name = "connection_ids")
     private String connectionIds ; // Comma-separated list of connection IDs
 
+    @Column(name = "user_id", nullable = false)
     private Long user;
 
     private boolean shared;

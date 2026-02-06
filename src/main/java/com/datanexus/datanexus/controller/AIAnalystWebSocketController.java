@@ -14,6 +14,7 @@ import org.springframework.messaging.simp.SimpMessageHeaderAccessor;
 import org.springframework.messaging.simp.annotation.SendToUser;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.CrossOrigin;
 
 import java.security.Principal;
 import java.time.Instant;
@@ -21,6 +22,7 @@ import java.time.Instant;
 @Controller
 @RequiredArgsConstructor
 @Slf4j
+@CrossOrigin("*")
 public class AIAnalystWebSocketController {
 
     private final AIAnalystOrchestrator orchestrator;

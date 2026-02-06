@@ -17,6 +17,8 @@ import java.util.Map;
 @RestController
 @RequestMapping("/api/v1/conversations")
 @RequiredArgsConstructor
+@CrossOrigin("*")
+
 public class ConversationController {
 
     private final ConversationService conversationService;

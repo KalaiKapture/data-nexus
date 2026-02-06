@@ -48,7 +48,7 @@ public class QuerySafetyValidator {
                 String keyword = pattern.pattern().replaceAll("\\\\b", "").replaceAll("\\(.*?\\)", "");
                 return ValidationResult.invalid(
                         "Forbidden SQL operation detected: " + keyword +
-                        ". Only SELECT queries are allowed for security reasons.");
+                                ". Only SELECT queries are allowed for security reasons.");
             }
         }
 
@@ -57,12 +57,12 @@ public class QuerySafetyValidator {
             if (!(statement instanceof Select)) {
                 return ValidationResult.invalid(
                         "Only SELECT statements are allowed. Received: " +
-                        statement.getClass().getSimpleName());
+                                statement.getClass().getSimpleName());
             }
         } catch (Exception e) {
             log.warn("SQL parsing failed for validation, falling back to pattern check: {}", e.getMessage());
             if (!trimmed.toUpperCase().trim().startsWith("SELECT") &&
-                !trimmed.toUpperCase().trim().startsWith("WITH")) {
+                    !trimmed.toUpperCase().trim().startsWith("WITH")) {
                 return ValidationResult.invalid("Query must start with SELECT or WITH (CTE)");
             }
         }
