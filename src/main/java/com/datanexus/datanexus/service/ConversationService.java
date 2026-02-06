@@ -48,12 +48,12 @@ public class ConversationService {
         return toDetailDto(conversation);
     }
 
-    public ConversationDto getConversation(String conversationId, User user) {
+    public ConversationDto getConversation(Long conversationId, User user) {
         Conversation conversation = findConversationByIdAndUser(conversationId, user.getId());
         return toDetailDto(conversation);
     }
 
-    public ConversationDto updateConversation(String conversationId, UpdateConversationRequest request, User user) {
+    public ConversationDto updateConversation(Long conversationId, UpdateConversationRequest request, User user) {
         Conversation conversation = findConversationByIdAndUser(conversationId, user.getId());
 
         if (request.getName() != null) conversation.setName(request.getName());
@@ -69,12 +69,12 @@ public class ConversationService {
                 .build();
     }
 
-    public MessageDto addMessage(String conversationId, AddMessageRequest request, User user) {
+    public MessageDto addMessage(Long conversationId, AddMessageRequest request, User user) {
         Conversation conversation = findConversationByIdAndUser(conversationId, user.getId());
 
         Message message = Message.builder()
-                .role(request.getRole())
                 .content(request.getContent())
+                .sentByUser(request.isSentByUser())
                 .conversation(conversation)
                 .build();
 
@@ -82,18 +82,27 @@ public class ConversationService {
 
         return MessageDto.builder()
                 .id(message.getId())
-                .role(message.getRole())
                 .content(message.getContent())
-                .timestamp(message.getTimestamp())
+                .sentByUser(message.isSentByUser())
+                .createdAt(message.getCreatedAt())
+                .updatedAt(message.getUpdatedAt())
                 .build();
     }
 
-    public void deleteConversation(String conversationId, User user) {
+    public List<MessageDto> getMessages(Long conversationId, User user) {
+        findConversationByIdAndUser(conversationId, user.getId());
+        List<Message> messages = messageRepository.findByConversationId(conversationId);
+        return messages.stream()
+                .map(this::toMessageDto)
+                .collect(Collectors.toList());
+    }
+
+    public void deleteConversation(Long conversationId, User user) {
         Conversation conversation = findConversationByIdAndUser(conversationId, user.getId());
         conversationRepository.delete(conversation);
     }
 
-    public ConversationDto shareConversation(String conversationId, User user) {
+    public ConversationDto shareConversation(Long conversationId, User user) {
         Conversation conversation = findConversationByIdAndUser(conversationId, user.getId());
 
         String shareId = UUID.randomUUID().toString().replace("-", "").substring(0, 12);
@@ -116,14 +125,14 @@ public class ConversationService {
         return toDetailDto(conversation);
     }
 
-    public void unshareConversation(String conversationId, User user) {
+    public void unshareConversation(Long conversationId, User user) {
         Conversation conversation = findConversationByIdAndUser(conversationId, user.getId());
         conversation.setShared(false);
         conversation.setShareId(null);
         conversationRepository.save(conversation);
     }
 
-    private Conversation findConversationByIdAndUser(String conversationId, String userId) {
+    private Conversation findConversationByIdAndUser(Long conversationId, Long userId) {
         Conversation conversation = conversationRepository.findByIdAndUserId(conversationId, userId);
         if (conversation == null) {
             throw ApiException.notFound("CONVERSATION_NOT_FOUND", "The requested conversation could not be found");
@@ -146,12 +155,7 @@ public class ConversationService {
 
     private ConversationDto toDetailDto(Conversation conversation) {
         List<MessageDto> messageDtos = conversation.getMessages().stream()
-                .map(m -> MessageDto.builder()
-                        .id(m.getId())
-                        .role(m.getRole())
-                        .content(m.getContent())
-                        .timestamp(m.getTimestamp())
-                        .build())
+                .map(this::toMessageDto)
                 .collect(Collectors.toList());
 
         return ConversationDto.builder()
@@ -164,6 +168,16 @@ public class ConversationService {
                 .updatedAt(conversation.getUpdatedAt())
                 .isShared(conversation.isShared())
                 .shareId(conversation.getShareId())
+                .build();
+    }
+
+    private MessageDto toMessageDto(Message m) {
+        return MessageDto.builder()
+                .id(m.getId())
+                .content(m.getContent())
+                .sentByUser(m.isSentByUser())
+                .createdAt(m.getCreatedAt())
+                .updatedAt(m.getUpdatedAt())
                 .build();
     }
 }

@@ -2,6 +2,8 @@ package com.datanexus.datanexus.entity;
 
 import jakarta.persistence.*;
 import lombok.*;
+import org.hibernate.annotations.CreationTimestamp;
+import org.hibernate.annotations.UpdateTimestamp;
 
 import java.time.Instant;
 
@@ -15,28 +17,21 @@ import java.time.Instant;
 public class Message {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    private String id;
-
-    @Column(nullable = false)
-    private String role;
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
 
     @Column(columnDefinition = "TEXT", nullable = false)
     private String content;
 
-    @Column(columnDefinition = "TEXT")
-    private String data;
+    private boolean sentByUser;
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "conversation_id", nullable = false)
     private Conversation conversation;
 
-    private Instant timestamp;
+    @CreationTimestamp
+    private Instant createdAt;
 
-    @PrePersist
-    public void prePersist() {
-        if (timestamp == null) {
-            timestamp = Instant.now();
-        }
-    }
+    @UpdateTimestamp
+    private Instant updatedAt;
 }

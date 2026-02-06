@@ -39,6 +39,14 @@ public class AuthController {
         return ResponseEntity.ok(ApiResponse.success(Map.of("user", userDto)));
     }
 
+    @PutMapping("/me")
+    public ResponseEntity<ApiResponse<Map<String, UserDto>>> updateUser(
+            @RequestBody UpdateUserRequest request,
+            @AuthenticationPrincipal User user) {
+        UserDto userDto = authService.updateUser(user, request.getUsername(), request.getEmail());
+        return ResponseEntity.ok(ApiResponse.success(Map.of("user", userDto)));
+    }
+
     @PostMapping("/refresh")
     public ResponseEntity<ApiResponse<TokenResponse>> refresh(@Valid @RequestBody RefreshTokenRequest request) {
         TokenResponse response = authService.refreshToken(request);

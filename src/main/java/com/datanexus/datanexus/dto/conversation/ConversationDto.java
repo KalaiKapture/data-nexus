@@ -14,9 +14,9 @@ import java.util.List;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class ConversationDto {
 
-    private String id;
+    private Long id;
     private String name;
-    private List<String> connectionIds;
+    private List<Long> connectionIds;
     private List<MessageDto> messages;
     private int messageCount;
     private Instant createdAt;

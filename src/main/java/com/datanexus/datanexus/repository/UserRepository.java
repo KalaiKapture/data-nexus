@@ -9,7 +9,7 @@ import java.util.Map;
 @Repository
 public class UserRepository {
 
-    public User findById(String id) {
+    public User findById(Long id) {
         return PSQLUtil.getSingleResult(
                 "FROM User u WHERE u.id = :id",
                 Map.of("id", id),

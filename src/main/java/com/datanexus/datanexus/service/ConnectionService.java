@@ -67,7 +67,7 @@ public class ConnectionService {
         return toDto(connection);
     }
 
-    public ConnectionDto updateConnection(String connectionId, ConnectionRequest request, User user) {
+    public ConnectionDto updateConnection(Long connectionId, ConnectionRequest request, User user) {
         DatabaseConnection connection = getConnectionEntity(connectionId, user);
 
         if (request.getName() != null) connection.setName(request.getName());
@@ -82,12 +82,12 @@ public class ConnectionService {
         return toDto(connection);
     }
 
-    public void deleteConnection(String connectionId, User user) {
+    public void deleteConnection(Long connectionId, User user) {
         DatabaseConnection connection = getConnectionEntity(connectionId, user);
         connectionRepository.delete(connection);
     }
 
-    public ConnectionDto updateLastUsed(String connectionId, User user) {
+    public ConnectionDto updateLastUsed(Long connectionId, User user) {
         DatabaseConnection connection = getConnectionEntity(connectionId, user);
         connection.setLastUsed(Instant.now());
         connection = connectionRepository.save(connection);
@@ -97,7 +97,7 @@ public class ConnectionService {
                 .build();
     }
 
-    public DatabaseConnection getConnectionEntity(String connectionId, User user) {
+    public DatabaseConnection getConnectionEntity(Long connectionId, User user) {
         DatabaseConnection connection = connectionRepository.findByIdAndUserId(connectionId, user.getId());
         if (connection == null) {
             throw ApiException.notFound("CONNECTION_NOT_FOUND", "Database connection not found");
@@ -105,7 +105,7 @@ public class ConnectionService {
         return connection;
     }
 
-    public Map<String, Object> getSchema(String connectionId, User user) {
+    public Map<String, Object> getSchema(Long connectionId, User user) {
         DatabaseConnection conn = getConnectionEntity(connectionId, user);
         String jdbcUrl = buildJdbcUrl(conn.getType(), conn.getHost(), conn.getPort(), conn.getDatabase());
 

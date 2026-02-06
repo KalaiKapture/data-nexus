@@ -17,8 +17,8 @@ import java.time.Instant;
 public class DatabaseConnection {
 
     @Id
-    @GeneratedValue(strategy = GenerationType.UUID)
-    private String id;
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
 
     @Column(nullable = false)
     private String name;
@@ -36,7 +36,7 @@ public class DatabaseConnection {
     @Column(nullable = false)
     private String port;
 
-    @Column(nullable = false)
+    @Column(name = "db_name", nullable = false)
     private String database;
 
     @Column(nullable = false)

@@ -13,9 +13,9 @@ import java.time.Instant;
 @JsonInclude(JsonInclude.Include.NON_NULL)
 public class MessageDto {
 
-    private String id;
-    private String role;
+    private Long id;
     private String content;
-    private Object data;
-    private Instant timestamp;
+    private boolean sentByUser;
+    private Instant createdAt;
+    private Instant updatedAt;
 }

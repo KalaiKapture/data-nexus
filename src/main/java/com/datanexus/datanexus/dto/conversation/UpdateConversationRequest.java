@@ -11,5 +11,5 @@ import java.util.List;
 public class UpdateConversationRequest {
 
     private String name;
-    private List<String> connectionIds;
+    private List<Long> connectionIds;
 }
