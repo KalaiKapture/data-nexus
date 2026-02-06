@@ -25,20 +25,10 @@ public class Conversation {
     @Column(nullable = false)
     private String name;
 
-    @ElementCollection
-    @CollectionTable(name = "conversation_connections", joinColumns = @JoinColumn(name = "conversation_id"))
-    @Column(name = "connection_id")
-    @Builder.Default
-    private List<Long> connectionIds = new ArrayList<>();
+    @Column(name = "connection_ids")
+    private String connectionIds ; // Comma-separated list of connection IDs
 
-    @OneToMany(mappedBy = "conversation", cascade = CascadeType.ALL, orphanRemoval = true)
-    @OrderBy("createdAt ASC")
-    @Builder.Default
-    private List<Message> messages = new ArrayList<>();
-
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = false)
-    private User user;
+    private Long user;
 
     private boolean shared;
 

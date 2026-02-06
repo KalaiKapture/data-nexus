@@ -25,9 +25,8 @@ public class Message {
 
     private boolean sentByUser;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "conversation_id", nullable = false)
-    private Conversation conversation;
+    @Column(name = "conversation_id", nullable = false)
+    private Long conversation;
 
     @CreationTimestamp
     private Instant createdAt;

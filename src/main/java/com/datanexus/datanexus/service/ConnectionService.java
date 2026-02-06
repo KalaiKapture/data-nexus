@@ -59,7 +59,7 @@ public class ConnectionService {
                 .username(request.getUsername())
                 .password(request.getPassword())
                 .status("connected")
-                .user(user)
+                .user(user.getId())
                 .lastUsed(Instant.now())
                 .build();
 

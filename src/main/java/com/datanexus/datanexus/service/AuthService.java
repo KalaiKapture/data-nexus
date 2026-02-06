@@ -116,7 +116,7 @@ public class AuthService {
         storedToken.setRevoked(true);
         refreshTokenRepository.save(storedToken);
 
-        User user = storedToken.getUser();
+        User user = userRepository.findById(storedToken.getUser());
         String accessToken = jwtTokenProvider.generateAccessToken(String.valueOf(user.getId()), user.getUsername());
         String newRefreshToken = createRefreshToken(user);
 
@@ -133,7 +133,7 @@ public class AuthService {
     private String createRefreshToken(User user) {
         RefreshToken refreshToken = RefreshToken.builder()
                 .token(UUID.randomUUID().toString())
-                .user(user)
+                .user(user.getId())
                 .expiresAt(Instant.now().plus(refreshTokenExpiration, ChronoUnit.MILLIS))
                 .revoked(false)
                 .build();

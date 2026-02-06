@@ -48,9 +48,8 @@ public class DatabaseConnection {
     @Column(nullable = false)
     private String status;
 
-    @ManyToOne(fetch = FetchType.LAZY)
-    @JoinColumn(name = "user_id", nullable = false)
-    private User user;
+    @Column(name = "user_id", nullable = false)
+    private Long user;
 
     @CreationTimestamp
     private Instant createdAt;

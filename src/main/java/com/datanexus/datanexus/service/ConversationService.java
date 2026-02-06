@@ -39,8 +39,8 @@ public class ConversationService {
     public ConversationDto createConversation(CreateConversationRequest request, User user) {
         Conversation conversation = Conversation.builder()
                 .name(request.getName())
-                .connectionIds(request.getConnectionIds() != null ? request.getConnectionIds() : new ArrayList<>())
-                .user(user)
+                .connectionIds(request.getConnectionIds() != null ? request.getConnectionIds().toString() : "")
+                .user(user.getId())
                 .shared(false)
                 .build();
 
@@ -57,25 +57,24 @@ public class ConversationService {
         Conversation conversation = findConversationByIdAndUser(conversationId, user.getId());
 
         if (request.getName() != null) conversation.setName(request.getName());
-        if (request.getConnectionIds() != null) conversation.setConnectionIds(request.getConnectionIds());
+        if (request.getConnectionIds() != null) conversation.setConnectionIds(request.getConnectionIds().toString());
 
         conversation = conversationRepository.save(conversation);
 
         return ConversationDto.builder()
                 .id(conversation.getId())
                 .name(conversation.getName())
-                .connectionIds(conversation.getConnectionIds())
+                .connectionIds(request.getConnectionIds())
                 .updatedAt(conversation.getUpdatedAt())
                 .build();
     }
 
     public MessageDto addMessage(Long conversationId, AddMessageRequest request, User user) {
-        Conversation conversation = findConversationByIdAndUser(conversationId, user.getId());
 
         Message message = Message.builder()
                 .content(request.getContent())
                 .sentByUser(request.isSentByUser())
-                .conversation(conversation)
+                .conversation(conversationId)
                 .build();
 
         message = messageRepository.save(message);
