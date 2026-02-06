@@ -28,7 +28,7 @@ public class QueryGeneratorService {
         private String validationError;
     }
 
-    public List<GeneratedQuery> generateQueries(String userMessage,
+    public QueryGenerationResult generateQueries(String userMessage,
                                                  Map<Long, SchemaService.DatabaseSchema> schemas) {
         List<GeneratedQuery> queries = new ArrayList<>();
 
@@ -42,7 +42,18 @@ public class QueryGeneratorService {
             queries.add(query);
         }
 
-        return queries;
+        return QueryGenerationResult.builder()
+                .intent(intent)
+                .queries(queries)
+                .build();
+    }
+
+
+    @Getter
+    @Builder
+    public static class QueryGenerationResult {
+        private String intent;
+        private List<GeneratedQuery> queries;
     }
 
     private String analyzeIntent(String userMessage) {

@@ -5,6 +5,7 @@ import com.datanexus.datanexus.dto.websocket.AnalyzeRequest;
 import com.datanexus.datanexus.dto.websocket.AnalyzeResponse;
 import com.datanexus.datanexus.entity.User;
 import com.datanexus.datanexus.service.ai.AIAnalystOrchestrator;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.messaging.handler.annotation.MessageMapping;
@@ -23,6 +24,7 @@ import java.time.Instant;
 public class AIAnalystWebSocketController {
 
     private final AIAnalystOrchestrator orchestrator;
+    private final SimpMessagingTemplate messagingTemplate;
 
     @MessageMapping("/ai/analyze")
     public void analyzeData(@Payload AnalyzeRequest request,
@@ -83,5 +85,21 @@ public class AIAnalystWebSocketController {
 
     private void sendValidationError(User user, Long conversationId, String message) {
         log.warn("Validation error for user {}: {}", user.getId(), message);
+
+        AnalyzeResponse errorResponse = AnalyzeResponse.error(
+                conversationId,
+                "VALIDATION_ERROR",
+                message,
+                "Provide a non-empty message and at least one database connection ID.");
+
+        messagingTemplate.convertAndSendToUser(
+                user.getId().toString(),
+                "/queue/ai/response",
+                errorResponse);
+
+        messagingTemplate.convertAndSendToUser(
+                user.getId().toString(),
+                "/queue/ai/error",
+                errorResponse);
     }
 }

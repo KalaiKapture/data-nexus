@@ -98,8 +98,11 @@ public class AIAnalystOrchestrator {
             sendActivity(conversationId, user, AIActivityPhase.GENERATING_QUERIES,
                     "in_progress", "Generating safe read-only queries based on your request");
 
-            List<QueryGeneratorService.GeneratedQuery> generatedQueries =
+            QueryGeneratorService.QueryGenerationResult generationResult =
                     queryGeneratorService.generateQueries(request.getUserMessage(), schemas);
+
+            List<QueryGeneratorService.GeneratedQuery> generatedQueries = generationResult.getQueries();
+            String detectedIntent = generationResult.getIntent();
 
             List<QueryGeneratorService.GeneratedQuery> validQueries = generatedQueries.stream()
                     .filter(QueryGeneratorService.GeneratedQuery::isValid)
@@ -130,7 +133,6 @@ public class AIAnalystOrchestrator {
                     "in_progress", "Executing queries against data sources");
 
             List<AnalyzeResponse.QueryResult> queryResults = new ArrayList<>();
-            String lastIntent = "LIST";
 
             for (QueryGeneratorService.GeneratedQuery genQuery : validQueries) {
                 DatabaseConnection conn = connections.stream()
@@ -175,7 +177,7 @@ public class AIAnalystOrchestrator {
             List<Map<String, Object>> allData = queryResults.stream()
                     .flatMap(qr -> qr.getData().stream())
                     .toList();
-            String visualization = queryGeneratorService.suggestVisualization(lastIntent, allData);
+            String visualization = queryGeneratorService.suggestVisualization(detectedIntent, allData);
 
             sendActivity(conversationId, user, AIActivityPhase.PREPARING_RESPONSE,
                     "completed", "Response prepared with suggested visualization: " + visualization);
@@ -317,6 +319,11 @@ public class AIAnalystOrchestrator {
         messagingTemplate.convertAndSendToUser(
                 user.getId().toString(),
                 "/queue/ai/response",
+                errorResponse);
+
+        messagingTemplate.convertAndSendToUser(
+                user.getId().toString(),
+                "/queue/ai/error",
                 errorResponse);
     }
 
