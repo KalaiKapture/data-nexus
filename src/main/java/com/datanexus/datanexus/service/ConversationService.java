@@ -5,13 +5,13 @@ import com.datanexus.datanexus.entity.Conversation;
 import com.datanexus.datanexus.entity.Message;
 import com.datanexus.datanexus.entity.User;
 import com.datanexus.datanexus.exception.ApiException;
-import com.datanexus.datanexus.utils.PSQLUtil;
+import com.datanexus.datanexus.repository.ConversationRepository;
+import com.datanexus.datanexus.repository.MessageRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -19,16 +19,13 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ConversationService {
 
+    private final ConversationRepository conversationRepository;
+    private final MessageRepository messageRepository;
+
     public List<ConversationDto> getUserConversations(User user, int limit, int offset, String sort) {
         String orderDir = "oldest".equals(sort) ? "ASC" : "DESC";
-        String hql = "FROM Conversation c WHERE c.user.id = :userId ORDER BY c.updatedAt " + orderDir;
 
-        List<Conversation> conversations = PSQLUtil.runQuery(
-                hql,
-                Map.of("userId", user.getId()),
-                Conversation.class,
-                limit,
-                offset);
+        List<Conversation> conversations = conversationRepository.findByUserIdOrdered(user.getId(), orderDir, limit, offset);
 
         return conversations.stream()
                 .map(this::toListDto)
@@ -36,11 +33,7 @@ public class ConversationService {
     }
 
     public long countUserConversations(User user) {
-        List<Long> result = PSQLUtil.runQuery(
-                "SELECT COUNT(c) FROM Conversation c WHERE c.user.id = :userId",
-                Map.of("userId", user.getId()),
-                Long.class);
-        return PSQLUtil.getSingleResult(result) != null ? PSQLUtil.getSingleResult(result) : 0L;
+        return conversationRepository.countByUserId(user.getId());
     }
 
     public ConversationDto createConversation(CreateConversationRequest request, User user) {
@@ -51,7 +44,7 @@ public class ConversationService {
                 .shared(false)
                 .build();
 
-        conversation = PSQLUtil.saveOrUpdateWithReturn(conversation);
+        conversation = conversationRepository.save(conversation);
         return toDetailDto(conversation);
     }
 
@@ -66,7 +59,7 @@ public class ConversationService {
         if (request.getName() != null) conversation.setName(request.getName());
         if (request.getConnectionIds() != null) conversation.setConnectionIds(request.getConnectionIds());
 
-        conversation = PSQLUtil.saveOrUpdateWithReturn(conversation);
+        conversation = conversationRepository.save(conversation);
 
         return ConversationDto.builder()
                 .id(conversation.getId())
@@ -85,7 +78,7 @@ public class ConversationService {
                 .conversation(conversation)
                 .build();
 
-        message = PSQLUtil.saveOrUpdateWithReturn(message);
+        message = messageRepository.save(message);
 
         return MessageDto.builder()
                 .id(message.getId())
@@ -97,7 +90,7 @@ public class ConversationService {
 
     public void deleteConversation(String conversationId, User user) {
         Conversation conversation = findConversationByIdAndUser(conversationId, user.getId());
-        PSQLUtil.delete(conversation);
+        conversationRepository.delete(conversation);
     }
 
     public ConversationDto shareConversation(String conversationId, User user) {
@@ -106,7 +99,7 @@ public class ConversationService {
         String shareId = UUID.randomUUID().toString().replace("-", "").substring(0, 12);
         conversation.setShared(true);
         conversation.setShareId(shareId);
-        conversation = PSQLUtil.saveOrUpdateWithReturn(conversation);
+        conversation = conversationRepository.save(conversation);
 
         return ConversationDto.builder()
                 .id(conversation.getId())
@@ -116,10 +109,7 @@ public class ConversationService {
     }
 
     public ConversationDto getSharedConversation(String shareId) {
-        Conversation conversation = PSQLUtil.getSingleResult(
-                "FROM Conversation c WHERE c.shareId = :shareId",
-                Map.of("shareId", shareId),
-                Conversation.class);
+        Conversation conversation = conversationRepository.findByShareId(shareId);
         if (conversation == null) {
             throw ApiException.notFound("NOT_FOUND", "Shared conversation not found");
         }
@@ -130,14 +120,11 @@ public class ConversationService {
         Conversation conversation = findConversationByIdAndUser(conversationId, user.getId());
         conversation.setShared(false);
         conversation.setShareId(null);
-        PSQLUtil.saveOrUpdate(conversation);
+        conversationRepository.save(conversation);
     }
 
     private Conversation findConversationByIdAndUser(String conversationId, String userId) {
-        Conversation conversation = PSQLUtil.getSingleResult(
-                "FROM Conversation c WHERE c.id = :id AND c.user.id = :userId",
-                Map.of("id", conversationId, "userId", userId),
-                Conversation.class);
+        Conversation conversation = conversationRepository.findByIdAndUserId(conversationId, userId);
         if (conversation == null) {
             throw ApiException.notFound("CONVERSATION_NOT_FOUND", "The requested conversation could not be found");
         }
