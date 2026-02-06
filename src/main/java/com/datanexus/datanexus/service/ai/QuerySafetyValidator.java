@@ -1,5 +1,7 @@
 package com.datanexus.datanexus.service.ai;
 
+import lombok.AllArgsConstructor;
+import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
 import net.sf.jsqlparser.parser.CCJSqlParserUtil;
 import net.sf.jsqlparser.statement.Statement;
@@ -68,7 +70,12 @@ public class QuerySafetyValidator {
         return ValidationResult.valid();
     }
 
-    public record ValidationResult(boolean valid, String reason) {
+    @Getter
+    @AllArgsConstructor
+    public static class ValidationResult {
+        private final boolean valid;
+        private final String reason;
+
         public static ValidationResult valid() {
             return new ValidationResult(true, null);
         }
