@@ -30,10 +30,10 @@ public class QueryExecutionService {
 
     public ExecutionResult execute(DatabaseConnection conn, String sql) {
         QuerySafetyValidator.ValidationResult validation = safetyValidator.validate(sql);
-        if (!validation.valid()) {
+        if (!validation.isValid()) {
             return ExecutionResult.builder()
                     .success(false)
-                    .errorMessage(validation.reason())
+                    .errorMessage(validation.getReason())
                     .build();
         }
 

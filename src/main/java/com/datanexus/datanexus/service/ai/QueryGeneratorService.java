@@ -7,8 +7,6 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.util.*;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 @Service
@@ -101,12 +99,12 @@ public class QueryGeneratorService {
         String sql = buildSql(intent, primaryTable, relevantColumns, userMessage, schema.getDatabaseType());
 
         QuerySafetyValidator.ValidationResult validation = safetyValidator.validate(sql);
-        if (!validation.valid()) {
+        if (!validation.isValid()) {
             return GeneratedQuery.builder()
                     .connectionId(connectionId)
                     .sql(sql)
                     .valid(false)
-                    .validationError(validation.reason())
+                    .validationError(validation.getReason())
                     .build();
         }
 
