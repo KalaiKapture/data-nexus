@@ -23,6 +23,12 @@ public class Message {
     @Column(columnDefinition = "TEXT", nullable = false)
     private String content;
 
+    @Column(columnDefinition = "TEXT")
+    private String rawMessage;
+
+    @Column(name = "connection_ids")
+    private String connectionIds;
+
     private boolean sentByUser;
 
     @Column(name = "conversation_id", nullable = false)
