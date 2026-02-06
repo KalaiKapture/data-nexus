@@ -6,14 +6,14 @@ import com.datanexus.datanexus.entity.DatabaseConnection;
 import com.datanexus.datanexus.entity.Module;
 import com.datanexus.datanexus.entity.User;
 import com.datanexus.datanexus.exception.ApiException;
-import com.datanexus.datanexus.utils.PSQLUtil;
+import com.datanexus.datanexus.repository.DatabaseConnectionRepository;
+import com.datanexus.datanexus.repository.ModuleRepository;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -22,22 +22,18 @@ import java.util.stream.Collectors;
 public class ModuleService {
 
     private final ObjectMapper objectMapper;
+    private final ModuleRepository moduleRepository;
+    private final DatabaseConnectionRepository connectionRepository;
 
     public List<ModuleDto> getUserModules(User user) {
-        List<Module> modules = PSQLUtil.runQuery(
-                "FROM Module m WHERE m.user.id = :userId ORDER BY m.createdAt DESC",
-                Map.of("userId", user.getId()),
-                Module.class);
+        List<Module> modules = moduleRepository.findByUserIdOrderByCreatedAtDesc(user.getId());
         return modules.stream()
                 .map(this::toDto)
                 .collect(Collectors.toList());
     }
 
     public ModuleDto createModule(CreateModuleRequest request, User user) {
-        DatabaseConnection connection = PSQLUtil.getSingleResult(
-                "FROM DatabaseConnection dc WHERE dc.id = :id AND dc.user.id = :userId",
-                Map.of("id", request.getConnectionId(), "userId", user.getId()),
-                DatabaseConnection.class);
+        DatabaseConnection connection = connectionRepository.findByIdAndUserId(request.getConnectionId(), user.getId());
         if (connection == null) {
             throw ApiException.notFound("CONNECTION_NOT_FOUND", "Database connection not found");
         }
@@ -61,15 +57,12 @@ public class ModuleService {
                 .views(0)
                 .build();
 
-        module = PSQLUtil.saveOrUpdateWithReturn(module);
+        module = moduleRepository.save(module);
         return toDto(module);
     }
 
     public ModuleDto getModuleByShareId(String shareId) {
-        Module module = PSQLUtil.getSingleResult(
-                "FROM Module m WHERE m.shareId = :shareId",
-                Map.of("shareId", shareId),
-                Module.class);
+        Module module = moduleRepository.findByShareId(shareId);
         if (module == null) {
             throw ApiException.notFound("MODULE_NOT_FOUND", "Module not found");
         }
@@ -77,27 +70,21 @@ public class ModuleService {
     }
 
     public int incrementViews(String shareId) {
-        Module module = PSQLUtil.getSingleResult(
-                "FROM Module m WHERE m.shareId = :shareId",
-                Map.of("shareId", shareId),
-                Module.class);
+        Module module = moduleRepository.findByShareId(shareId);
         if (module == null) {
             throw ApiException.notFound("MODULE_NOT_FOUND", "Module not found");
         }
         module.setViews(module.getViews() + 1);
-        PSQLUtil.saveOrUpdate(module);
+        moduleRepository.save(module);
         return module.getViews();
     }
 
     public void deleteModule(String moduleId, User user) {
-        Module module = PSQLUtil.getSingleResult(
-                "FROM Module m WHERE m.id = :id AND m.user.id = :userId",
-                Map.of("id", moduleId, "userId", user.getId()),
-                Module.class);
+        Module module = moduleRepository.findByIdAndUserId(moduleId, user.getId());
         if (module == null) {
             throw ApiException.notFound("MODULE_NOT_FOUND", "Module not found");
         }
-        PSQLUtil.delete(module);
+        moduleRepository.delete(module);
     }
 
     private ModuleDto toDto(Module module) {

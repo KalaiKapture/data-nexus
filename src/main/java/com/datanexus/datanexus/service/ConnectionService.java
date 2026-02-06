@@ -4,7 +4,7 @@ import com.datanexus.datanexus.dto.connection.*;
 import com.datanexus.datanexus.entity.DatabaseConnection;
 import com.datanexus.datanexus.entity.User;
 import com.datanexus.datanexus.exception.ApiException;
-import com.datanexus.datanexus.utils.PSQLUtil;
+import com.datanexus.datanexus.repository.DatabaseConnectionRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -19,11 +19,10 @@ import java.util.stream.Collectors;
 @RequiredArgsConstructor
 public class ConnectionService {
 
+    private final DatabaseConnectionRepository connectionRepository;
+
     public List<ConnectionDto> getUserConnections(User user) {
-        List<DatabaseConnection> connections = PSQLUtil.runQuery(
-                "FROM DatabaseConnection dc WHERE dc.user.id = :userId ORDER BY dc.lastUsed DESC",
-                Map.of("userId", user.getId()),
-                DatabaseConnection.class);
+        List<DatabaseConnection> connections = connectionRepository.findByUserIdOrderByLastUsedDesc(user.getId());
         return connections.stream()
                 .map(this::toDto)
                 .collect(Collectors.toList());
@@ -64,7 +63,7 @@ public class ConnectionService {
                 .lastUsed(Instant.now())
                 .build();
 
-        connection = PSQLUtil.saveOrUpdateWithReturn(connection);
+        connection = connectionRepository.save(connection);
         return toDto(connection);
     }
 
@@ -79,19 +78,19 @@ public class ConnectionService {
         if (request.getPassword() != null) connection.setPassword(request.getPassword());
         connection.setLastUsed(Instant.now());
 
-        connection = PSQLUtil.saveOrUpdateWithReturn(connection);
+        connection = connectionRepository.save(connection);
         return toDto(connection);
     }
 
     public void deleteConnection(String connectionId, User user) {
         DatabaseConnection connection = getConnectionEntity(connectionId, user);
-        PSQLUtil.delete(connection);
+        connectionRepository.delete(connection);
     }
 
     public ConnectionDto updateLastUsed(String connectionId, User user) {
         DatabaseConnection connection = getConnectionEntity(connectionId, user);
         connection.setLastUsed(Instant.now());
-        connection = PSQLUtil.saveOrUpdateWithReturn(connection);
+        connection = connectionRepository.save(connection);
         return ConnectionDto.builder()
                 .id(connection.getId())
                 .lastUsed(connection.getLastUsed())
@@ -99,10 +98,7 @@ public class ConnectionService {
     }
 
     public DatabaseConnection getConnectionEntity(String connectionId, User user) {
-        DatabaseConnection connection = PSQLUtil.getSingleResult(
-                "FROM DatabaseConnection dc WHERE dc.id = :id AND dc.user.id = :userId",
-                Map.of("id", connectionId, "userId", user.getId()),
-                DatabaseConnection.class);
+        DatabaseConnection connection = connectionRepository.findByIdAndUserId(connectionId, user.getId());
         if (connection == null) {
             throw ApiException.notFound("CONNECTION_NOT_FOUND", "Database connection not found");
         }
