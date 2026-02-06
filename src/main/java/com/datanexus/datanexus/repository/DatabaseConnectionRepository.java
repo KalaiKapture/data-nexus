@@ -12,14 +12,14 @@ public class DatabaseConnectionRepository {
 
     public List<DatabaseConnection> findByUserIdOrderByLastUsedDesc(Long userId) {
         return PSQLUtil.runQuery(
-                "FROM DatabaseConnection dc WHERE dc.user.id = :userId ORDER BY dc.lastUsed DESC",
+                "FROM DatabaseConnection dc WHERE dc.user = :userId ORDER BY dc.lastUsed DESC",
                 Map.of("userId", userId),
                 DatabaseConnection.class);
     }
 
     public DatabaseConnection findByIdAndUserId(Long id, Long userId) {
         return PSQLUtil.getSingleResult(
-                "FROM DatabaseConnection dc WHERE dc.id = :id AND dc.user.id = :userId",
+                "FROM DatabaseConnection dc WHERE dc.id = :id AND dc.user = :userId",
                 Map.of("id", id, "userId", userId),
                 DatabaseConnection.class);
     }

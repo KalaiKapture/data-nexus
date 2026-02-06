@@ -11,13 +11,13 @@ import java.util.Map;
 public class ConversationRepository {
 
     public List<Conversation> findByUserIdOrdered(Long userId, String orderDir, int limit, int offset) {
-        String hql = "FROM Conversation c WHERE c.user.id = :userId ORDER BY c.updatedAt " + orderDir;
+        String hql = "FROM Conversation c WHERE c.user = :userId ORDER BY c.updatedAt " + orderDir;
         return PSQLUtil.runQuery(hql, Map.of("userId", userId), Conversation.class, limit, offset);
     }
 
     public long countByUserId(Long userId) {
         Long result = PSQLUtil.getSingleResult(
-                "SELECT COUNT(c) FROM Conversation c WHERE c.user.id = :userId",
+                "SELECT COUNT(c) FROM Conversation c WHERE c.user = :userId",
                 Map.of("userId", userId),
                 Long.class);
         return result != null ? result : 0L;
@@ -25,7 +25,7 @@ public class ConversationRepository {
 
     public Conversation findByIdAndUserId(Long id, Long userId) {
         return PSQLUtil.getSingleResult(
-                "FROM Conversation c WHERE c.id = :id AND c.user.id = :userId",
+                "FROM Conversation c WHERE c.id = :id AND c.user = :userId",
                 Map.of("id", id, "userId", userId),
                 Conversation.class);
     }

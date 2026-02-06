@@ -10,7 +10,8 @@ import com.datanexus.datanexus.repository.MessageRepository;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -39,7 +40,7 @@ public class ConversationService {
     public ConversationDto createConversation(CreateConversationRequest request, User user) {
         Conversation conversation = Conversation.builder()
                 .name(request.getName())
-                .connectionIds(request.getConnectionIds() != null ? request.getConnectionIds().toString() : "")
+                .connectionIds(toConnectionIdString(request.getConnectionIds()))
                 .user(user.getId())
                 .shared(false)
                 .build();
@@ -57,14 +58,14 @@ public class ConversationService {
         Conversation conversation = findConversationByIdAndUser(conversationId, user.getId());
 
         if (request.getName() != null) conversation.setName(request.getName());
-        if (request.getConnectionIds() != null) conversation.setConnectionIds(request.getConnectionIds().toString());
+        if (request.getConnectionIds() != null) conversation.setConnectionIds(toConnectionIdString(request.getConnectionIds()));
 
         conversation = conversationRepository.save(conversation);
 
         return ConversationDto.builder()
                 .id(conversation.getId())
                 .name(conversation.getName())
-                .connectionIds(request.getConnectionIds())
+                .connectionIds(parseConnectionIds(conversation.getConnectionIds()))
                 .updatedAt(conversation.getUpdatedAt())
                 .build();
     }
@@ -143,8 +144,8 @@ public class ConversationService {
         return ConversationDto.builder()
                 .id(conversation.getId())
                 .name(conversation.getName())
-                .connectionIds(conversation.getConnectionIds())
-                .messageCount(conversation.getMessages().size())
+                .connectionIds(parseConnectionIds(conversation.getConnectionIds()))
+                .messageCount((int) messageRepository.countByConversationId(conversation.getId()))
                 .createdAt(conversation.getCreatedAt())
                 .updatedAt(conversation.getUpdatedAt())
                 .isShared(conversation.isShared())
@@ -153,14 +154,14 @@ public class ConversationService {
     }
 
     private ConversationDto toDetailDto(Conversation conversation) {
-        List<MessageDto> messageDtos = conversation.getMessages().stream()
+        List<MessageDto> messageDtos = messageRepository.findByConversationId(conversation.getId()).stream()
                 .map(this::toMessageDto)
                 .collect(Collectors.toList());
 
         return ConversationDto.builder()
                 .id(conversation.getId())
                 .name(conversation.getName())
-                .connectionIds(conversation.getConnectionIds())
+                .connectionIds(parseConnectionIds(conversation.getConnectionIds()))
                 .messages(messageDtos)
                 .messageCount(messageDtos.size())
                 .createdAt(conversation.getCreatedAt())
@@ -168,6 +169,26 @@ public class ConversationService {
                 .isShared(conversation.isShared())
                 .shareId(conversation.getShareId())
                 .build();
+    }
+
+    private List<Long> parseConnectionIds(String connectionIds) {
+        if (connectionIds == null || connectionIds.isBlank()) {
+            return Collections.emptyList();
+        }
+        return Arrays.stream(connectionIds.split(","))
+                .map(String::trim)
+                .filter(s -> !s.isEmpty())
+                .map(Long::valueOf)
+                .collect(Collectors.toList());
+    }
+
+    private String toConnectionIdString(List<Long> connectionIds) {
+        if (connectionIds == null || connectionIds.isEmpty()) {
+            return "";
+        }
+        return connectionIds.stream()
+                .map(String::valueOf)
+                .collect(Collectors.joining(","));
     }
 
     private MessageDto toMessageDto(Message m) {

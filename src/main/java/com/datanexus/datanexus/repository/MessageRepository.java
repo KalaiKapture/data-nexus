@@ -16,8 +16,16 @@ public class MessageRepository {
 
     public List<Message> findByConversationId(Long conversationId) {
         return PSQLUtil.runQuery(
-                "FROM Message m WHERE m.conversation.id = :conversationId ORDER BY m.createdAt ASC",
+                "FROM Message m WHERE m.conversation = :conversationId ORDER BY m.createdAt ASC",
                 Map.of("conversationId", conversationId),
                 Message.class);
+    }
+
+    public long countByConversationId(Long conversationId) {
+        Long result = PSQLUtil.getSingleResult(
+                "SELECT COUNT(m) FROM Message m WHERE m.conversation = :conversationId",
+                Map.of("conversationId", conversationId),
+                Long.class);
+        return result != null ? result : 0L;
     }
 }
