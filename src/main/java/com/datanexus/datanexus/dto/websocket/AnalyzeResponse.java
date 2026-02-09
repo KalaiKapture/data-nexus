@@ -36,6 +36,9 @@ public class AnalyzeResponse {
         private List<Map<String, Object>> data;
         private List<String> columns;
         private int rowCount;
+        private String explanation;
+        private String errorMessage;
+        private Long executionTimeMs;
     }
 
     @Getter
@@ -50,8 +53,8 @@ public class AnalyzeResponse {
     }
 
     public static AnalyzeResponse success(Long conversationId, String summary,
-                                           List<QueryResult> queryResults,
-                                           String suggestedVisualization) {
+            List<QueryResult> queryResults,
+            String suggestedVisualization) {
         return AnalyzeResponse.builder()
                 .success(true)
                 .conversationId(conversationId)
@@ -63,7 +66,7 @@ public class AnalyzeResponse {
     }
 
     public static AnalyzeResponse error(Long conversationId, String code,
-                                         String message, String suggestion) {
+            String message, String suggestion) {
         return AnalyzeResponse.builder()
                 .success(false)
                 .conversationId(conversationId)

@@ -5,6 +5,7 @@ import com.datanexus.datanexus.dto.websocket.AnalyzeRequest;
 import com.datanexus.datanexus.dto.websocket.AnalyzeResponse;
 import com.datanexus.datanexus.entity.User;
 import com.datanexus.datanexus.service.ai.AIAnalystOrchestrator;
+import com.datanexus.datanexus.service.ai.MultiSourceChatOrchestrator;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
@@ -26,13 +27,13 @@ import java.time.Instant;
 public class AIAnalystWebSocketController {
 
     private final AIAnalystOrchestrator orchestrator;
+    private final MultiSourceChatOrchestrator multiSourceOrchestrator;
     private final SimpMessagingTemplate messagingTemplate;
 
     @MessageMapping("/ai/analyze")
     public void analyzeData(@Payload AnalyzeRequest request,
-                            SimpMessageHeaderAccessor headerAccessor) {
+            SimpMessageHeaderAccessor headerAccessor) {
         Principal principal = headerAccessor.getUser();
-
 
         if (principal == null) {
             log.warn("Received analyze request without authentication");
@@ -57,10 +58,17 @@ public class AIAnalystWebSocketController {
             return;
         }
 
-        log.info("Processing analyze request from user {} for conversation {}",
-                user.getId(), request.getConversationId());
+        log.info("Processing analyze request from user {} for conversation {} with AI provider: {}",
+                user.getId(), request.getConversationId(), request.getAiProvider());
 
-        orchestrator.processAnalyzeRequest(request, user,wsUser);
+        // Route to appropriate orchestrator
+        if (request.getAiProvider() != null && !request.getAiProvider().isEmpty()) {
+            // Use new multi-source orchestrator with AI provider support
+            multiSourceOrchestrator.processMessage(request, user, wsUser);
+        } else {
+            // Fallback to legacy orchestrator
+            orchestrator.processAnalyzeRequest(request, user, wsUser);
+        }
     }
 
     @MessageMapping("/ai/ping")

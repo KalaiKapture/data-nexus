@@ -40,4 +40,8 @@ public class MessageRepository {
                 Map.of("conversationId", conversationId),
                 Activities.class);
     }
+
+    public List<Message> findByConversationIdOrderByCreatedAtAsc(Long conversationId) {
+        return findByConversationId(conversationId);
+    }
 }
