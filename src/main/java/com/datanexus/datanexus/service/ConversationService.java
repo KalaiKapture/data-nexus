@@ -1,6 +1,7 @@
 package com.datanexus.datanexus.service;
 
 import com.datanexus.datanexus.dto.conversation.*;
+import com.datanexus.datanexus.entity.Activities;
 import com.datanexus.datanexus.entity.Conversation;
 import com.datanexus.datanexus.entity.Message;
 import com.datanexus.datanexus.entity.User;
@@ -199,5 +200,11 @@ public class ConversationService {
                 .createdAt(m.getCreatedAt())
                 .updatedAt(m.getUpdatedAt())
                 .build();
+    }
+
+    public List<Activities> getActivities(Long conversationId, User user) {
+        findConversationByIdAndUser(conversationId, user.getId());
+        List<Activities> activities = messageRepository.findActivityByConversation(conversationId);
+        return activities;
     }
 }

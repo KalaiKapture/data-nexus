@@ -51,6 +51,9 @@ public class DatabaseConnection {
     @Column(name = "user_id", nullable = false)
     private Long user;
 
+    @Column(name = "other_Details", columnDefinition = "TEXT")
+    private String otherDetails;
+
     @CreationTimestamp
     private Instant createdAt;
 

@@ -12,6 +12,7 @@ import lombok.extern.slf4j.Slf4j;
 import net.sf.json.JSONObject;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import java.util.*;
 import java.util.stream.Collectors;
@@ -36,7 +37,10 @@ public class AIAnalystOrchestrator {
             // Resolve or create conversation
             conversationId = resolveConversation(request, user);
             // Store user message
-            Message message = storeUserMessage(conversationId, request.getUserMessage());
+            Message userMessage = storeUserMessage(conversationId, request.getUserMessage());
+            sendMessage(conversationId, wsUser, AIActivityPhase.UNDERSTANDING_INTENT, "completed", JSONObject.fromObject(userMessage).toString());
+
+            Message message = storeAIResponse(conversationId, "Activities..."); // Placeholder for AI response to link activities
             sendMessage(conversationId, wsUser, AIActivityPhase.UNDERSTANDING_INTENT, "completed", JSONObject.fromObject(message).toString());
             // Phase 1: Understanding user intent
             storeActivity(conversationId, wsUser, AIActivityPhase.UNDERSTANDING_INTENT,
@@ -96,7 +100,7 @@ public class AIAnalystOrchestrator {
                     "in_progress", "Generating safe read-only queries based on your request", "ACTIVITY", message.getId());
 
             QueryGeneratorService.QueryGenerationResult generationResult =
-                    queryGeneratorService.generateQueries(request.getUserMessage(), schemas, false);
+                    queryGeneratorService.generateQueries(request.getUserMessage(), schemas, true);
 
             List<QueryGeneratorService.GeneratedQuery> generatedQueries = generationResult.getQueries();
             String detectedIntent = generationResult.getIntent();
@@ -205,7 +209,7 @@ public class AIAnalystOrchestrator {
         }
     }
 
-    private void storeActivity(Long conversationId, String wsUser, AIActivityPhase phase, String status, String content, String type, Long messageId) {
+    public void storeActivity(Long conversationId, String wsUser, AIActivityPhase phase, String status, String content, String type, Long messageId) {
         Activities activities = Activities.builder()
                 .content(content)
                 .messageId(messageId)
@@ -251,13 +255,14 @@ public class AIAnalystOrchestrator {
         return messageRepository.save(message);
     }
 
-    private void storeAIResponse(Long conversationId, String content) {
+
+    public Message storeAIResponse(Long conversationId, String content) {
         Message message = Message.builder()
                 .content(content)
                 .sentByUser(false)
                 .conversation(conversationId)
                 .build();
-        messageRepository.save(message);
+        return messageRepository.save(message);
     }
 
     private List<DatabaseConnection> resolveConnections(List<Long> connectionIds, User user) {

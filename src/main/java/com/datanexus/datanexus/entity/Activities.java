@@ -23,13 +23,12 @@ public class Activities {
     @Column(columnDefinition = "TEXT", nullable = false)
     private String content;
 
-    @Column(columnDefinition = "TEXT")
     private String type;
 
     @Column(name = "message_id", nullable = false)
     private Long messageId;
 
-    @Column(name = "conversation_id", nullable = false)
+    @Column(name = "conversation_id")
     private Long conversation;
 
     @CreationTimestamp

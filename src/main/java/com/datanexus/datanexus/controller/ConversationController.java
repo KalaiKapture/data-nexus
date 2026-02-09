@@ -2,6 +2,7 @@ package com.datanexus.datanexus.controller;
 
 import com.datanexus.datanexus.dto.ApiResponse;
 import com.datanexus.datanexus.dto.conversation.*;
+import com.datanexus.datanexus.entity.Activities;
 import com.datanexus.datanexus.entity.User;
 import com.datanexus.datanexus.service.ConversationService;
 import jakarta.validation.Valid;
@@ -109,5 +110,16 @@ public class ConversationController {
             @AuthenticationPrincipal User user) {
         conversationService.unshareConversation(conversationId, user);
         return ResponseEntity.ok(ApiResponse.success("Conversation is no longer shared"));
+    }
+
+    @GetMapping("/{conversationId}/activity")
+    public ResponseEntity<ApiResponse<Map<String, Object>>> getActivities(
+            @PathVariable Long conversationId,
+            @AuthenticationPrincipal User user) {
+        List<Activities> messages = conversationService.getActivities(conversationId, user);
+        return ResponseEntity.ok(ApiResponse.success(Map.of(
+                "activities", messages,
+                "total", messages.size()
+        )));
     }
 }

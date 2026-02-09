@@ -33,4 +33,11 @@ public class MessageRepository {
     public Activities saveActivity(Activities activity) {
         return PSQLUtil.saveOrUpdateWithReturn(activity);
     }
+
+    public List<Activities> findActivityByConversation(Long conversationId) {
+        return PSQLUtil.runQuery(
+                "FROM Activities m WHERE m.conversation = :conversationId ORDER BY m.createdAt ASC",
+                Map.of("conversationId", conversationId),
+                Activities.class);
+    }
 }
