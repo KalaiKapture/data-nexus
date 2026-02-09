@@ -3,15 +3,13 @@ package com.datanexus.datanexus.service.ai;
 import com.datanexus.datanexus.dto.websocket.AIActivityMessage;
 import com.datanexus.datanexus.dto.websocket.AnalyzeRequest;
 import com.datanexus.datanexus.dto.websocket.AnalyzeResponse;
-import com.datanexus.datanexus.entity.Conversation;
-import com.datanexus.datanexus.entity.DatabaseConnection;
-import com.datanexus.datanexus.entity.Message;
-import com.datanexus.datanexus.entity.User;
+import com.datanexus.datanexus.entity.*;
 import com.datanexus.datanexus.repository.ConversationRepository;
 import com.datanexus.datanexus.repository.DatabaseConnectionRepository;
 import com.datanexus.datanexus.repository.MessageRepository;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import net.sf.json.JSONObject;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
@@ -31,72 +29,71 @@ public class AIAnalystOrchestrator {
     private final QueryGeneratorService queryGeneratorService;
     private final QueryExecutionService queryExecutionService;
 
-    public void processAnalyzeRequest(AnalyzeRequest request, User user) {
+    public void processAnalyzeRequest(AnalyzeRequest request, User user, String wsUser) {
         Long conversationId = request.getConversationId();
 
         try {
-            // Phase 1: Understanding user intent
-            sendActivity(conversationId, user, AIActivityPhase.UNDERSTANDING_INTENT,
-                    "in_progress", "Analyzing your request: \"" + truncate(request.getUserMessage(), 100) + "\"");
-
             // Resolve or create conversation
             conversationId = resolveConversation(request, user);
-
             // Store user message
-            storeUserMessage(conversationId, request.getUserMessage());
+            Message message = storeUserMessage(conversationId, request.getUserMessage());
+            sendMessage(conversationId, wsUser, AIActivityPhase.UNDERSTANDING_INTENT, "completed", JSONObject.fromObject(message).toString());
+            // Phase 1: Understanding user intent
+            storeActivity(conversationId, wsUser, AIActivityPhase.UNDERSTANDING_INTENT,
+                    "in_progress", "Analyzing your request: \"" + truncate(request.getUserMessage(), 100) + "\"", "ACTIVITY", message.getId());
 
-            sendActivity(conversationId, user, AIActivityPhase.UNDERSTANDING_INTENT,
-                    "completed", "User intent understood");
+            storeActivity(conversationId, wsUser, AIActivityPhase.UNDERSTANDING_INTENT,
+                    "completed", "User intent understood", "ACTIVITY", message.getId());
 
             // Phase 2: Mapping to data sources
-            sendActivity(conversationId, user, AIActivityPhase.MAPPING_DATA_SOURCES,
-                    "in_progress", "Identifying data sources from " + request.getConnectionIds().size() + " connection(s)");
+            storeActivity(conversationId, wsUser, AIActivityPhase.MAPPING_DATA_SOURCES,
+                    "in_progress", "Identifying data sources from " + request.getConnectionIds().size() + " connection(s)", "ACTIVITY", message.getId());
 
             List<DatabaseConnection> connections = resolveConnections(request.getConnectionIds(), user);
 
             if (connections.isEmpty()) {
                 sendErrorResponse(conversationId, user, "NO_CONNECTIONS",
                         "No valid database connections found for the provided connection IDs.",
-                        "Please check your connection IDs and ensure they are configured correctly.");
+                        "Please check your connection IDs and ensure they are configured correctly.", wsUser);
                 return;
             }
 
-            sendActivity(conversationId, user, AIActivityPhase.MAPPING_DATA_SOURCES,
+            storeActivity(conversationId, wsUser, AIActivityPhase.MAPPING_DATA_SOURCES,
                     "completed", "Mapped to " + connections.size() + " data source(s): " +
-                    connections.stream().map(DatabaseConnection::getName).collect(Collectors.joining(", ")));
+                            connections.stream().map(DatabaseConnection::getName).collect(Collectors.joining(", ")), "ACTIVITY", message.getId());
 
             // Phase 3: Analyzing schemas
-            sendActivity(conversationId, user, AIActivityPhase.ANALYZING_SCHEMAS,
-                    "in_progress", "Retrieving schema information from connected databases");
+            storeActivity(conversationId, wsUser, AIActivityPhase.ANALYZING_SCHEMAS,
+                    "in_progress", "Retrieving schema information from connected databases", "ACTIVITY", message.getId());
 
             Map<Long, SchemaService.DatabaseSchema> schemas = new LinkedHashMap<>();
             for (DatabaseConnection conn : connections) {
                 try {
                     SchemaService.DatabaseSchema schema = schemaService.extractSchema(conn);
                     schemas.put(conn.getId(), schema);
-                    sendActivity(conversationId, user, AIActivityPhase.ANALYZING_SCHEMAS,
+                    storeActivity(conversationId, wsUser, AIActivityPhase.ANALYZING_SCHEMAS,
                             "in_progress", "Schema loaded for '" + conn.getName() + "': " +
-                            schema.getTables().size() + " table(s) found");
+                                    schema.getTables().size() + " table(s) found", "ACTIVITY", message.getId());
                 } catch (Exception e) {
                     log.error("Failed to extract schema for connection {}: {}", conn.getId(), e.getMessage());
-                    sendActivity(conversationId, user, AIActivityPhase.ANALYZING_SCHEMAS,
-                            "in_progress", "Warning: Could not load schema for '" + conn.getName() + "'");
+                    storeActivity(conversationId, wsUser, AIActivityPhase.ANALYZING_SCHEMAS,
+                            "in_progress", "Warning: Could not load schema for '" + conn.getName() + "'", "ACTIVITY", message.getId());
                 }
             }
 
             if (schemas.isEmpty()) {
                 sendErrorResponse(conversationId, user, "SCHEMA_ERROR",
                         "Could not retrieve schema from any of the connected databases.",
-                        "Please verify your database connections are active and accessible.");
+                        "Please verify your database connections are active and accessible.", wsUser);
                 return;
             }
 
-            sendActivity(conversationId, user, AIActivityPhase.ANALYZING_SCHEMAS,
-                    "completed", "Schema analysis complete for " + schemas.size() + " database(s)");
+            storeActivity(conversationId, wsUser, AIActivityPhase.ANALYZING_SCHEMAS,
+                    "completed", "Schema analysis complete for " + schemas.size() + " database(s)", "ACTIVITY", message.getId());
 
             // Phase 4: Generating queries
-            sendActivity(conversationId, user, AIActivityPhase.GENERATING_QUERIES,
-                    "in_progress", "Generating safe read-only queries based on your request");
+            storeActivity(conversationId, wsUser, AIActivityPhase.GENERATING_QUERIES,
+                    "in_progress", "Generating safe read-only queries based on your request", "ACTIVITY", message.getId());
 
             QueryGeneratorService.QueryGenerationResult generationResult =
                     queryGeneratorService.generateQueries(request.getUserMessage(), schemas);
@@ -116,21 +113,21 @@ public class AIAnalystOrchestrator {
 
                 sendErrorResponse(conversationId, user, "QUERY_GENERATION_FAILED",
                         "Could not generate a valid query for your request. " + reasons,
-                        "Try rephrasing your question or specifying the table/column names more clearly.");
+                        "Try rephrasing your question or specifying the table/column names more clearly.", wsUser);
                 return;
             }
 
             for (QueryGeneratorService.GeneratedQuery q : validQueries) {
-                sendActivity(conversationId, user, AIActivityPhase.GENERATING_QUERIES,
-                        "in_progress", "Generated query for connection " + q.getConnectionId() + ": " + q.getSql());
+                storeActivity(conversationId, wsUser, AIActivityPhase.GENERATING_QUERIES,
+                        "in_progress", "Generated query for connection " + q.getConnectionId() + ": " + q.getSql(), "ACTIVITY", message.getId());
             }
 
-            sendActivity(conversationId, user, AIActivityPhase.GENERATING_QUERIES,
-                    "completed", "Generated " + validQueries.size() + " safe SELECT query/queries");
+            storeActivity(conversationId, wsUser, AIActivityPhase.GENERATING_QUERIES,
+                    "completed", "Generated " + validQueries.size() + " safe SELECT query/queries", "ACTIVITY", message.getId());
 
             // Phase 5: Executing queries
-            sendActivity(conversationId, user, AIActivityPhase.EXECUTING_QUERIES,
-                    "in_progress", "Executing queries against data sources");
+            storeActivity(conversationId, wsUser, AIActivityPhase.EXECUTING_QUERIES,
+                    "in_progress", "Executing queries against data sources", "ACTIVITY", message.getId());
 
             List<AnalyzeResponse.QueryResult> queryResults = new ArrayList<>();
 
@@ -142,8 +139,8 @@ public class AIAnalystOrchestrator {
 
                 if (conn == null) continue;
 
-                sendActivity(conversationId, user, AIActivityPhase.EXECUTING_QUERIES,
-                        "in_progress", "Executing query on '" + conn.getName() + "'...");
+                storeActivity(conversationId, wsUser, AIActivityPhase.EXECUTING_QUERIES,
+                        "in_progress", "Executing query on '" + conn.getName() + "'...", "ACTIVITY", message.getId());
 
                 QueryExecutionService.ExecutionResult result = queryExecutionService.execute(conn, genQuery.getSql());
 
@@ -157,21 +154,21 @@ public class AIAnalystOrchestrator {
                             .rowCount(result.getRowCount())
                             .build());
 
-                    sendActivity(conversationId, user, AIActivityPhase.EXECUTING_QUERIES,
+                    storeActivity(conversationId, wsUser, AIActivityPhase.EXECUTING_QUERIES,
                             "in_progress", "Query on '" + conn.getName() + "' returned " +
-                            result.getRowCount() + " row(s) in " + result.getExecutionTimeMs() + "ms");
+                                    result.getRowCount() + " row(s) in " + result.getExecutionTimeMs() + "ms", "ACTIVITY", message.getId());
                 } else {
-                    sendActivity(conversationId, user, AIActivityPhase.EXECUTING_QUERIES,
-                            "in_progress", "Query on '" + conn.getName() + "' failed: " + result.getErrorMessage());
+                    storeActivity(conversationId, wsUser, AIActivityPhase.EXECUTING_QUERIES,
+                            "in_progress", "Query on '" + conn.getName() + "' failed: " + result.getErrorMessage(), "ACTIVITY", message.getId());
                 }
             }
 
-            sendActivity(conversationId, user, AIActivityPhase.EXECUTING_QUERIES,
-                    "completed", "Query execution completed with " + queryResults.size() + " successful result(s)");
+            storeActivity(conversationId, wsUser, AIActivityPhase.EXECUTING_QUERIES,
+                    "completed", "Query execution completed with " + queryResults.size() + " successful result(s)", "ACTIVITY", message.getId());
 
             // Phase 6: Preparing response
-            sendActivity(conversationId, user, AIActivityPhase.PREPARING_RESPONSE,
-                    "in_progress", "Preparing response and determining best visualization");
+            storeActivity(conversationId, wsUser, AIActivityPhase.PREPARING_RESPONSE,
+                    "in_progress", "Preparing response and determining best visualization", "ACTIVITY", message.getId());
 
             String summary = buildSummary(request.getUserMessage(), queryResults);
             List<Map<String, Object>> allData = queryResults.stream()
@@ -179,8 +176,8 @@ public class AIAnalystOrchestrator {
                     .toList();
             String visualization = queryGeneratorService.suggestVisualization(detectedIntent, allData);
 
-            sendActivity(conversationId, user, AIActivityPhase.PREPARING_RESPONSE,
-                    "completed", "Response prepared with suggested visualization: " + visualization);
+            storeActivity(conversationId, wsUser, AIActivityPhase.PREPARING_RESPONSE,
+                    "completed", "Response prepared with suggested visualization: " + visualization, "ACTIVITY", message.getId());
 
             // Store AI response
             storeAIResponse(conversationId, summary);
@@ -189,11 +186,14 @@ public class AIAnalystOrchestrator {
             AnalyzeResponse response = AnalyzeResponse.success(
                     conversationId, summary, queryResults, visualization);
 
-            sendActivity(conversationId, user, AIActivityPhase.COMPLETED,
-                    "completed", "Analysis complete");
+            storeActivity(conversationId, wsUser, AIActivityPhase.COMPLETED,
+                    "completed", "Analysis complete", "ACTIVITY", message.getId());
+
+            storeActivity(conversationId, wsUser, AIActivityPhase.COMPLETED,
+                    "completed", JSONObject.fromObject(response).toString(), "RESPONSE", message.getId());
 
             messagingTemplate.convertAndSendToUser(
-                    user.getId().toString(),
+                    wsUser,
                     "/queue/ai/response",
                     response);
 
@@ -201,8 +201,19 @@ public class AIAnalystOrchestrator {
             log.error("Error processing analyze request: {}", e.getMessage(), e);
             sendErrorResponse(conversationId, user, "INTERNAL_ERROR",
                     "An unexpected error occurred while processing your request.",
-                    "Please try again. If the problem persists, check your database connections.");
+                    "Please try again. If the problem persists, check your database connections.", wsUser);
         }
+    }
+
+    private void storeActivity(Long conversationId, String wsUser, AIActivityPhase phase, String status, String content, String type, Long messageId) {
+        Activities activities = Activities.builder()
+                .content(content)
+                .messageId(messageId)
+                .conversation(conversationId)
+                .type(type)
+                .build();
+        activities = messageRepository.saveActivity(activities);
+        sendActivity(conversationId, wsUser, phase, status, JSONObject.fromObject(activities).toString());
     }
 
     private Long resolveConversation(AnalyzeRequest request, User user) {
@@ -231,13 +242,13 @@ public class AIAnalystOrchestrator {
         return conversation.getId();
     }
 
-    private void storeUserMessage(Long conversationId, String content) {
+    private Message storeUserMessage(Long conversationId, String content) {
         Message message = Message.builder()
                 .content(content)
                 .sentByUser(true)
                 .conversation(conversationId)
                 .build();
-        messageRepository.save(message);
+        return messageRepository.save(message);
     }
 
     private void storeAIResponse(Long conversationId, String content) {
@@ -269,7 +280,7 @@ public class AIAnalystOrchestrator {
     private String buildSummary(String userMessage, List<AnalyzeResponse.QueryResult> results) {
         if (results.isEmpty()) {
             return "No data was returned for your query: \"" + userMessage + "\". " +
-                   "The query executed successfully but produced no matching results.";
+                    "The query executed successfully but produced no matching results.";
         }
 
         StringBuilder sb = new StringBuilder();
@@ -292,27 +303,39 @@ public class AIAnalystOrchestrator {
 
         if (results.size() > 1) {
             sb.append("\nData was queried from ").append(results.size())
-              .append(" separate data sources and presented independently.");
+                    .append(" separate data sources and presented independently.");
         }
 
         return sb.toString().trim();
     }
 
-    private void sendActivity(Long conversationId, User user, AIActivityPhase phase,
-                               String status, String message) {
+    private void sendActivity(Long conversationId, String user, AIActivityPhase phase,
+                              String status, String message) {
         AIActivityMessage activity = AIActivityMessage.of(phase.getCode(), status, message, conversationId);
 
         messagingTemplate.convertAndSendToUser(
-                user.getId().toString(),
+                user,
                 "/queue/ai/activity",
                 activity);
 
         log.debug("AI Activity [{}]: {} - {}", phase.getCode(), status, message);
     }
 
+    private void sendMessage(Long conversationId, String user, AIActivityPhase phase,
+                             String status, String message) {
+        AIActivityMessage activity = AIActivityMessage.of(phase.getCode(), status, message, conversationId);
+
+        messagingTemplate.convertAndSendToUser(
+                user,
+                "/queue/ai/message",
+                activity);
+
+        log.debug("AI Message [{}]: {} - {}", phase.getCode(), status, message);
+    }
+
     private void sendErrorResponse(Long conversationId, User user, String code,
-                                    String message, String suggestion) {
-        sendActivity(conversationId, user, AIActivityPhase.ERROR, "error", message);
+                                   String message, String suggestion, String wsUser) {
+        sendActivity(conversationId, wsUser, AIActivityPhase.ERROR, "error", message);
 
         AnalyzeResponse errorResponse = AnalyzeResponse.error(conversationId, code, message, suggestion);
 

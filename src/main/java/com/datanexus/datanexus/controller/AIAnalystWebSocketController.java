@@ -33,10 +33,12 @@ public class AIAnalystWebSocketController {
                             SimpMessageHeaderAccessor headerAccessor) {
         Principal principal = headerAccessor.getUser();
 
+
         if (principal == null) {
             log.warn("Received analyze request without authentication");
             return;
         }
+        String wsUser = principal.getName();
 
         User user = extractUser(principal);
         if (user == null) {
@@ -58,7 +60,7 @@ public class AIAnalystWebSocketController {
         log.info("Processing analyze request from user {} for conversation {}",
                 user.getId(), request.getConversationId());
 
-        orchestrator.processAnalyzeRequest(request, user);
+        orchestrator.processAnalyzeRequest(request, user,wsUser);
     }
 
     @MessageMapping("/ai/ping")

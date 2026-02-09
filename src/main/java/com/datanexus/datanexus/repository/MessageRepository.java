@@ -1,5 +1,6 @@
 package com.datanexus.datanexus.repository;
 
+import com.datanexus.datanexus.entity.Activities;
 import com.datanexus.datanexus.entity.Message;
 import com.datanexus.datanexus.utils.PSQLUtil;
 import org.springframework.stereotype.Repository;
@@ -27,5 +28,9 @@ public class MessageRepository {
                 Map.of("conversationId", conversationId),
                 Long.class);
         return result != null ? result : 0L;
+    }
+
+    public Activities saveActivity(Activities activity) {
+        return PSQLUtil.saveOrUpdateWithReturn(activity);
     }
 }
