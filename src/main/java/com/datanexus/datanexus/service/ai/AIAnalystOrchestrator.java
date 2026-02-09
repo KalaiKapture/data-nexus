@@ -96,7 +96,7 @@ public class AIAnalystOrchestrator {
                     "in_progress", "Generating safe read-only queries based on your request", "ACTIVITY", message.getId());
 
             QueryGeneratorService.QueryGenerationResult generationResult =
-                    queryGeneratorService.generateQueries(request.getUserMessage(), schemas);
+                    queryGeneratorService.generateQueries(request.getUserMessage(), schemas, false);
 
             List<QueryGeneratorService.GeneratedQuery> generatedQueries = generationResult.getQueries();
             String detectedIntent = generationResult.getIntent();

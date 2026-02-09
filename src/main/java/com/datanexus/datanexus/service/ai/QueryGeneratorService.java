@@ -1,11 +1,19 @@
 package com.datanexus.datanexus.service.ai;
 
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
+import java.time.Duration;
 import java.util.*;
 import java.util.stream.Collectors;
 
@@ -15,6 +23,21 @@ import java.util.stream.Collectors;
 public class QueryGeneratorService {
 
     private final QuerySafetyValidator safetyValidator;
+    private final SchemaService schemaService;
+    private final ObjectMapper objectMapper;
+
+    @Value("${ai.openai.api-key:}")
+    private String openAiApiKey;
+
+    @Value("${ai.openai.model:gpt-4o-mini}")
+    private String openAiModel;
+
+    @Value("${ai.openai.url:https://api.openai.com/v1/chat/completions}")
+    private String openAiUrl;
+
+    private final HttpClient httpClient = HttpClient.newBuilder()
+            .connectTimeout(Duration.ofSeconds(20))
+            .build();
 
     private static final int DEFAULT_LIMIT = 100;
 
@@ -29,7 +52,11 @@ public class QueryGeneratorService {
     }
 
     public QueryGenerationResult generateQueries(String userMessage,
-                                                 Map<Long, SchemaService.DatabaseSchema> schemas) {
+                                                 Map<Long, SchemaService.DatabaseSchema> schemas,boolean isAskOpenAi) {
+
+        if (openAiApiKey != null && !openAiApiKey.isBlank() &&isAskOpenAi) {
+            return generateQueriesWithOpenAi(userMessage, schemas);
+        }
         List<GeneratedQuery> queries = new ArrayList<>();
 
         String intent = analyzeIntent(userMessage);
@@ -91,8 +118,8 @@ public class QueryGeneratorService {
     }
 
     private GeneratedQuery buildQueryForSchema(String userMessage, String intent,
-                                                Long connectionId,
-                                                SchemaService.DatabaseSchema schema) {
+                                               Long connectionId,
+                                               SchemaService.DatabaseSchema schema) {
         List<SchemaService.TableSchema> matchedTables = findRelevantTables(userMessage, schema);
 
         if (matchedTables.isEmpty()) {
@@ -129,7 +156,7 @@ public class QueryGeneratorService {
     }
 
     private List<SchemaService.TableSchema> findRelevantTables(String userMessage,
-                                                                SchemaService.DatabaseSchema schema) {
+                                                               SchemaService.DatabaseSchema schema) {
         String lower = userMessage.toLowerCase();
         List<SchemaService.TableSchema> matched = new ArrayList<>();
 
@@ -139,7 +166,7 @@ public class QueryGeneratorService {
                     ? tableLower.substring(0, tableLower.length() - 1) : tableLower;
 
             if (lower.contains(tableLower) || lower.contains(tableSingular) ||
-                lower.contains(tableLower.replace("_", " "))) {
+                    lower.contains(tableLower.replace("_", " "))) {
                 matched.add(table);
             }
         }
@@ -152,7 +179,7 @@ public class QueryGeneratorService {
                 int score = 0;
                 for (SchemaService.ColumnSchema col : table.getColumns()) {
                     if (lower.contains(col.getName().toLowerCase()) ||
-                        lower.contains(col.getName().toLowerCase().replace("_", " "))) {
+                            lower.contains(col.getName().toLowerCase().replace("_", " "))) {
                         score++;
                     }
                 }
@@ -173,7 +200,7 @@ public class QueryGeneratorService {
     }
 
     private List<SchemaService.ColumnSchema> findRelevantColumns(String userMessage,
-                                                                  SchemaService.TableSchema table) {
+                                                                 SchemaService.TableSchema table) {
         String lower = userMessage.toLowerCase();
         List<SchemaService.ColumnSchema> relevant = new ArrayList<>();
 
@@ -200,8 +227,8 @@ public class QueryGeneratorService {
     }
 
     private String buildSql(String intent, SchemaService.TableSchema table,
-                             List<SchemaService.ColumnSchema> columns,
-                             String userMessage, String dbType) {
+                            List<SchemaService.ColumnSchema> columns,
+                            String userMessage, String dbType) {
         String tableName = quoteIdentifier(table.getTableName(), dbType);
         String alias = "t";
 
@@ -219,8 +246,8 @@ public class QueryGeneratorService {
     }
 
     private String buildCountQuery(String tableName, String alias,
-                                    List<SchemaService.ColumnSchema> columns,
-                                    String userMessage) {
+                                   List<SchemaService.ColumnSchema> columns,
+                                   String userMessage) {
         Optional<SchemaService.ColumnSchema> groupCol = findGroupableColumn(columns, userMessage);
 
         if (groupCol.isPresent()) {
@@ -233,8 +260,8 @@ public class QueryGeneratorService {
     }
 
     private String buildAggregateQuery(String function, String tableName, String alias,
-                                        List<SchemaService.ColumnSchema> columns,
-                                        String userMessage) {
+                                       List<SchemaService.ColumnSchema> columns,
+                                       String userMessage) {
         Optional<SchemaService.ColumnSchema> numericCol = columns.stream()
                 .filter(c -> isNumericType(c.getDataType()))
                 .findFirst();
@@ -249,8 +276,8 @@ public class QueryGeneratorService {
     }
 
     private String buildGroupQuery(String tableName, String alias,
-                                    List<SchemaService.ColumnSchema> columns,
-                                    String userMessage) {
+                                   List<SchemaService.ColumnSchema> columns,
+                                   String userMessage) {
         Optional<SchemaService.ColumnSchema> groupCol = findGroupableColumn(columns, userMessage);
         Optional<SchemaService.ColumnSchema> numericCol = columns.stream()
                 .filter(c -> isNumericType(c.getDataType()))
@@ -271,8 +298,8 @@ public class QueryGeneratorService {
     }
 
     private String buildTrendQuery(String tableName, String alias,
-                                    List<SchemaService.ColumnSchema> columns,
-                                    String userMessage) {
+                                   List<SchemaService.ColumnSchema> columns,
+                                   String userMessage) {
         Optional<SchemaService.ColumnSchema> dateCol = columns.stream()
                 .filter(c -> isDateType(c.getDataType()))
                 .findFirst();
@@ -295,7 +322,7 @@ public class QueryGeneratorService {
     }
 
     private String buildListQuery(String tableName, String alias,
-                                   List<SchemaService.ColumnSchema> columns) {
+                                  List<SchemaService.ColumnSchema> columns) {
         String colList = columns.stream()
                 .map(c -> alias + "." + c.getName())
                 .collect(Collectors.joining(", "));
@@ -310,7 +337,7 @@ public class QueryGeneratorService {
         return columns.stream()
                 .filter(c -> !c.isPrimaryKey() && !isNumericType(c.getDataType()) && !isDateType(c.getDataType()))
                 .filter(c -> lower.contains(c.getName().toLowerCase()) ||
-                             lower.contains(c.getName().toLowerCase().replace("_", " ")))
+                        lower.contains(c.getName().toLowerCase().replace("_", " ")))
                 .findFirst()
                 .or(() -> columns.stream()
                         .filter(c -> !c.isPrimaryKey() && isStringType(c.getDataType()))
@@ -320,8 +347,8 @@ public class QueryGeneratorService {
     private boolean isNumericType(String dataType) {
         String upper = dataType.toUpperCase();
         return upper.contains("INT") || upper.contains("DECIMAL") || upper.contains("NUMERIC") ||
-               upper.contains("FLOAT") || upper.contains("DOUBLE") || upper.contains("REAL") ||
-               upper.contains("MONEY") || upper.contains("SERIAL");
+                upper.contains("FLOAT") || upper.contains("DOUBLE") || upper.contains("REAL") ||
+                upper.contains("MONEY") || upper.contains("SERIAL");
     }
 
     private boolean isDateType(String dataType) {
@@ -332,7 +359,7 @@ public class QueryGeneratorService {
     private boolean isStringType(String dataType) {
         String upper = dataType.toUpperCase();
         return upper.contains("CHAR") || upper.contains("VARCHAR") || upper.contains("TEXT") ||
-               upper.contains("STRING");
+                upper.contains("STRING");
     }
 
     private String quoteIdentifier(String name, String dbType) {
@@ -368,4 +395,119 @@ public class QueryGeneratorService {
             default -> "table";
         };
     }
+
+    private QueryGenerationResult generateQueriesWithOpenAi(String userMessage,
+                                                            Map<Long, SchemaService.DatabaseSchema> schemas) {
+        List<GeneratedQuery> queries = new ArrayList<>();
+        String intent = analyzeIntent(userMessage);
+
+        for (Map.Entry<Long, SchemaService.DatabaseSchema> entry : schemas.entrySet()) {
+            Long connectionId = entry.getKey();
+            SchemaService.DatabaseSchema schema = entry.getValue();
+
+            GeneratedQuery query = buildQueryWithOpenAi(userMessage, connectionId, schema);
+            if (query.getExplanation() != null && query.getExplanation().contains("[intent:")) {
+                int start = query.getExplanation().lastIndexOf("[intent:");
+                int end = query.getExplanation().lastIndexOf("]");
+                if (start >= 0 && end > start) {
+                    intent = query.getExplanation().substring(start + 8, end).trim();
+                }
+            }
+            queries.add(query);
+        }
+
+        return QueryGenerationResult.builder()
+                .intent(intent)
+                .queries(queries)
+                .build();
+    }
+
+    private GeneratedQuery buildQueryWithOpenAi(String userMessage,
+                                                Long connectionId,
+                                                SchemaService.DatabaseSchema schema) {
+        try {
+            String schemaDescription = schemaService.schemaToDescription(schema);
+            String prompt = "User request: " + userMessage + "\n\n" +
+                    "Database schema:\n" + schemaDescription + "\n\n" +
+                    "Generate exactly one read-only SQL query for this database. " +
+                    "Rules: only SELECT/WITH, no DDL/DML, include LIMIT 100 when listing rows. " +
+                    "Return JSON only in this format: " +
+                    "{\"sql\":\"...\",\"intent\":\"...\",\"explanation\":\"...\"}.";
+
+            Map<String, Object> payload = Map.of(
+                    "model", openAiModel,
+                    "temperature", 0,
+                    "messages", List.of(
+                            Map.of("role", "system", "content", "You are a SQL assistant. Output strict JSON only."),
+                            Map.of("role", "user", "content", prompt)
+                    )
+            );
+
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create(openAiUrl))
+                    .header("Authorization", "Bearer " + openAiApiKey)
+                    .header("Content-Type", "application/json")
+                    .timeout(Duration.ofSeconds(40))
+                    .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(payload)))
+                    .build();
+
+            HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString());
+            if (response.statusCode() >= 300) {
+                return GeneratedQuery.builder()
+                        .connectionId(connectionId)
+                        .valid(false)
+                        .validationError("OpenAI query generation failed with status " + response.statusCode())
+                        .build();
+            }
+
+            JsonNode root = objectMapper.readTree(response.body());
+            String content = root.path("choices").path(0).path("message").path("content").asText("");
+            if (content.isBlank()) {
+                return GeneratedQuery.builder()
+                        .connectionId(connectionId)
+                        .valid(false)
+                        .validationError("OpenAI returned empty query response")
+                        .build();
+            }
+
+            JsonNode queryJson = objectMapper.readTree(stripCodeFences(content));
+            String sql = queryJson.path("sql").asText("").trim();
+            String intent = queryJson.path("intent").asText(analyzeIntent(userMessage));
+            String explanation = queryJson.path("explanation").asText("Generated by OpenAI") + " [intent:" + intent + "]";
+
+            QuerySafetyValidator.ValidationResult validation = safetyValidator.validate(sql);
+            if (!validation.isValid()) {
+                return GeneratedQuery.builder()
+                        .connectionId(connectionId)
+                        .sql(sql)
+                        .valid(false)
+                        .validationError("Generated SQL was blocked by safety validator: " + validation.getReason())
+                        .build();
+            }
+
+            return GeneratedQuery.builder()
+                    .connectionId(connectionId)
+                    .sql(sql)
+                    .explanation(explanation)
+                    .valid(true)
+                    .build();
+        } catch (Exception e) {
+            log.error("OpenAI query generation failed for connection {}: {}", connectionId, e.getMessage());
+            return GeneratedQuery.builder()
+                    .connectionId(connectionId)
+                    .valid(false)
+                    .validationError("OpenAI query generation failed: " + e.getMessage())
+                    .build();
+        }
+    }
+
+    private String stripCodeFences(String content) {
+        String trimmed = content.trim();
+        if (trimmed.startsWith("```") && trimmed.endsWith("```")) {
+            String withoutStart = trimmed.replaceFirst("^```(?:json)?", "").trim();
+            return withoutStart.substring(0, withoutStart.length() - 3).trim();
+        }
+        return trimmed;
+    }
+
 }
