@@ -7,7 +7,11 @@ public enum DataSourceType {
     DATABASE("Database"),
     MCP_SERVER("MCP Server"),
     REST_API("REST API"),
-    GRAPHQL_API("GraphQL API");
+    GRAPHQL_API("GraphQL API"),
+    MONGODB("MongoDB"),
+    REDIS("Redis"),
+    ELASTICSEARCH("Elasticsearch"),
+    BIGQUERY("BigQuery");
 
     private final String displayName;
 

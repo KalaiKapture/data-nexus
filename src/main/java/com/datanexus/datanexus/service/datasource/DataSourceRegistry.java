@@ -5,6 +5,8 @@ import com.datanexus.datanexus.enums.DatabaseType;
 import com.datanexus.datanexus.repository.DatabaseConnectionRepository;
 import com.datanexus.datanexus.service.datasource.impl.DatabaseDataSource;
 import com.datanexus.datanexus.service.datasource.impl.MCPServerDataSource;
+import com.datanexus.datanexus.service.datasource.impl.MongoDBDataSource;
+import com.datanexus.datanexus.service.datasource.impl.ElasticsearchDataSource;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -25,6 +27,8 @@ public class DataSourceRegistry {
     private final DatabaseConnectionRepository connectionRepository;
     private final DatabaseDataSource.Factory databaseDataSourceFactory;
     private final MCPServerDataSource.Factory mcpDataSourceFactory;
+    private final MongoDBDataSource.Factory mongoDataSourceFactory;
+    private final ElasticsearchDataSource.Factory elasticsearchDataSourceFactory;
 
     // Cache of active data sources
     private final Map<String, DataSource> dataSourceCache = new ConcurrentHashMap<>();
@@ -58,8 +62,14 @@ public class DataSourceRegistry {
                 case POSTGRESQL, MYSQL, SQLITE, SUPABASE, STARROCKS, CLICKHOUSE, SNOWFLAKE ->
                     databaseDataSourceFactory.create(connection);
 
-                // NoSQL and Search require specialized implementations (future)
-                case MONGODB, REDIS, ELASTICSEARCH, BIGQUERY ->
+                // MongoDB implementation
+                case MONGODB -> mongoDataSourceFactory.create(connection);
+
+                // Elasticsearch implementation
+                case ELASTICSEARCH -> elasticsearchDataSourceFactory.create(connection);
+
+                // Redis and BigQuery require specialized implementations (future)
+                case REDIS, BIGQUERY ->
                     throw new UnsupportedOperationException(
                             "Database type '" + dbType.getDisplayName() + "' is registered but not yet implemented. " +
                                     "Coming soon in future updates!");
