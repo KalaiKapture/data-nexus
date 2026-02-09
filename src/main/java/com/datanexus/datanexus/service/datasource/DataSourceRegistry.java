@@ -1,6 +1,7 @@
 package com.datanexus.datanexus.service.datasource;
 
 import com.datanexus.datanexus.entity.DatabaseConnection;
+import com.datanexus.datanexus.enums.DatabaseType;
 import com.datanexus.datanexus.repository.DatabaseConnectionRepository;
 import com.datanexus.datanexus.service.datasource.impl.DatabaseDataSource;
 import com.datanexus.datanexus.service.datasource.impl.MCPServerDataSource;
@@ -38,11 +39,30 @@ public class DataSourceRegistry {
             log.info("Creating new data source for connection: {} (type: {})",
                     connection.getName(), connection.getType());
 
-            return switch (connection.getType().toLowerCase()) {
-                case "postgresql", "mysql" -> databaseDataSourceFactory.create(connection);
-                case "mcp" -> mcpDataSourceFactory.create(connection);
-                default -> throw new IllegalArgumentException(
-                        "Unsupported connection type: " + connection.getType());
+            // Use DatabaseType enum to determine the data source type
+            DatabaseType dbType = DatabaseType.fromId(connection.getType());
+
+            if (dbType == null) {
+                throw new IllegalArgumentException(
+                        "Unknown database type: " + connection.getType() +
+                                ". Supported types: " + DatabaseType.getAllTypes().stream()
+                                        .map(DatabaseType::getId)
+                                        .toList());
+            }
+
+            // Route based on database type
+            return switch (dbType) {
+                case MCP -> mcpDataSourceFactory.create(connection);
+
+                // All SQL databases use DatabaseDataSource
+                case POSTGRESQL, MYSQL, SQLITE, SUPABASE, STARROCKS, CLICKHOUSE, SNOWFLAKE ->
+                    databaseDataSourceFactory.create(connection);
+
+                // NoSQL and Search require specialized implementations (future)
+                case MONGODB, REDIS, ELASTICSEARCH, BIGQUERY ->
+                    throw new UnsupportedOperationException(
+                            "Database type '" + dbType.getDisplayName() + "' is registered but not yet implemented. " +
+                                    "Coming soon in future updates!");
             };
         });
     }

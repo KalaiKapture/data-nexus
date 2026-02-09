@@ -5,6 +5,7 @@ import com.datanexus.datanexus.entity.DatabaseConnection;
 import com.datanexus.datanexus.entity.User;
 import com.datanexus.datanexus.exception.ApiException;
 import com.datanexus.datanexus.repository.DatabaseConnectionRepository;
+import com.datanexus.datanexus.util.JdbcUrlBuilder;
 import lombok.RequiredArgsConstructor;
 import org.springframework.stereotype.Service;
 
@@ -34,10 +35,12 @@ public class ConnectionService {
 
         try (Connection conn = DriverManager.getConnection(jdbcUrl, request.getUsername(), request.getPassword())) {
             long latency = System.currentTimeMillis() - start;
-            String version = conn.getMetaData().getDatabaseProductName() + " " + conn.getMetaData().getDatabaseProductVersion();
+            String version = conn.getMetaData().getDatabaseProductName() + " "
+                    + conn.getMetaData().getDatabaseProductVersion();
             return TestConnectionResponse.builder()
                     .connected(true)
-                    .message("Successfully connected to " + request.getType() + " database at " + request.getHost() + ":" + request.getPort())
+                    .message("Successfully connected to " + request.getType() + " database at " + request.getHost()
+                            + ":" + request.getPort())
                     .serverVersion(version)
                     .latency(latency)
                     .build();
@@ -70,12 +73,18 @@ public class ConnectionService {
     public ConnectionDto updateConnection(Long connectionId, ConnectionRequest request, User user) {
         DatabaseConnection connection = getConnectionEntity(connectionId, user);
 
-        if (request.getName() != null) connection.setName(request.getName());
-        if (request.getHost() != null) connection.setHost(request.getHost());
-        if (request.getPort() != null) connection.setPort(request.getPort());
-        if (request.getDatabase() != null) connection.setDatabase(request.getDatabase());
-        if (request.getUsername() != null) connection.setUsername(request.getUsername());
-        if (request.getPassword() != null) connection.setPassword(request.getPassword());
+        if (request.getName() != null)
+            connection.setName(request.getName());
+        if (request.getHost() != null)
+            connection.setHost(request.getHost());
+        if (request.getPort() != null)
+            connection.setPort(request.getPort());
+        if (request.getDatabase() != null)
+            connection.setDatabase(request.getDatabase());
+        if (request.getUsername() != null)
+            connection.setUsername(request.getUsername());
+        if (request.getPassword() != null)
+            connection.setPassword(request.getPassword());
         connection.setLastUsed(Instant.now());
 
         connection = connectionRepository.save(connection);
@@ -111,7 +120,7 @@ public class ConnectionService {
 
         try (Connection dbConn = DriverManager.getConnection(jdbcUrl, conn.getUsername(), conn.getPassword())) {
             var metaData = dbConn.getMetaData();
-            var rs = metaData.getTables(null, null, "%", new String[]{"TABLE"});
+            var rs = metaData.getTables(null, null, "%", new String[] { "TABLE" });
             var tables = new java.util.ArrayList<Map<String, Object>>();
 
             while (rs.next()) {
@@ -123,15 +132,13 @@ public class ConnectionService {
                     columns.add(Map.of(
                             "name", colRs.getString("COLUMN_NAME"),
                             "type", colRs.getString("TYPE_NAME"),
-                            "nullable", "YES".equals(colRs.getString("IS_NULLABLE"))
-                    ));
+                            "nullable", "YES".equals(colRs.getString("IS_NULLABLE"))));
                 }
                 colRs.close();
 
                 tables.add(Map.of(
                         "name", tableName,
-                        "columns", columns
-                ));
+                        "columns", columns));
             }
             rs.close();
 

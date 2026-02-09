@@ -1,6 +1,7 @@
 package com.datanexus.datanexus.service.ai;
 
 import com.datanexus.datanexus.entity.DatabaseConnection;
+import com.datanexus.datanexus.util.JdbcUrlBuilder;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.extern.slf4j.Slf4j;
@@ -40,14 +41,14 @@ public class SchemaService {
     }
 
     public DatabaseSchema extractSchema(DatabaseConnection conn) {
-        String jdbcUrl = buildJdbcUrl(conn.getType(), conn.getHost(), conn.getPort(), conn.getDatabase());
+        String jdbcUrl = JdbcUrlBuilder.buildUrl(conn.getType(), conn.getHost(), conn.getPort(), conn.getDatabase());
         List<TableSchema> tables = new ArrayList<>();
 
         try (Connection dbConn = DriverManager.getConnection(jdbcUrl, conn.getUsername(), conn.getPassword())) {
             DatabaseMetaData metaData = dbConn.getMetaData();
             String schema = getDefaultSchema(conn.getType());
 
-            ResultSet tableRs = metaData.getTables(null, schema, "%", new String[]{"TABLE"});
+            ResultSet tableRs = metaData.getTables(null, schema, "%", new String[] { "TABLE" });
 
             while (tableRs.next()) {
                 String tableName = tableRs.getString("TABLE_NAME");
@@ -99,7 +100,7 @@ public class SchemaService {
     public String schemaToDescription(DatabaseSchema schema) {
         StringBuilder sb = new StringBuilder();
         sb.append("Database: ").append(schema.getConnectionName())
-          .append(" (").append(schema.getDatabaseType()).append(")\n");
+                .append(" (").append(schema.getDatabaseType()).append(")\n");
         sb.append("Tables:\n");
 
         for (TableSchema table : schema.getTables()) {
@@ -107,8 +108,10 @@ public class SchemaService {
             List<String> colDescs = new ArrayList<>();
             for (ColumnSchema col : table.getColumns()) {
                 String desc = col.getName() + " " + col.getDataType();
-                if (col.isPrimaryKey()) desc += " PK";
-                if (!col.isNullable()) desc += " NOT NULL";
+                if (col.isPrimaryKey())
+                    desc += " PK";
+                if (!col.isNullable())
+                    desc += " NOT NULL";
                 colDescs.add(desc);
             }
             sb.append(String.join(", ", colDescs));
@@ -133,16 +136,9 @@ public class SchemaService {
         }
         if ("mysql".equalsIgnoreCase(dbType)) {
             return lower.startsWith("mysql.") || lower.startsWith("sys.") ||
-                   lower.startsWith("performance_schema.");
+                    lower.startsWith("performance_schema.");
         }
         return false;
     }
 
-    private String buildJdbcUrl(String type, String host, String port, String database) {
-        return switch (type.toLowerCase()) {
-            case "postgresql" -> "jdbc:postgresql://" + host + ":" + port + "/" + database;
-            case "mysql" -> "jdbc:mysql://" + host + ":" + port + "/" + database;
-            default -> "jdbc:" + type + "://" + host + ":" + port + "/" + database;
-        };
-    }
 }

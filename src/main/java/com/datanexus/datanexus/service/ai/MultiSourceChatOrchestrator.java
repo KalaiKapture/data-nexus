@@ -5,9 +5,11 @@ import com.datanexus.datanexus.dto.websocket.AnalyzeResponse;
 import com.datanexus.datanexus.dto.websocket.ClarificationRequest;
 import com.datanexus.datanexus.entity.Conversation;
 import com.datanexus.datanexus.entity.DatabaseConnection;
+import com.datanexus.datanexus.entity.Message;
 import com.datanexus.datanexus.entity.User;
 import com.datanexus.datanexus.repository.ConversationRepository;
 import com.datanexus.datanexus.repository.DatabaseConnectionRepository;
+import com.datanexus.datanexus.repository.MessageRepository;
 import com.datanexus.datanexus.service.ai.provider.*;
 import com.datanexus.datanexus.service.datasource.DataRequest;
 import com.datanexus.datanexus.service.datasource.DataSource;
@@ -37,6 +39,7 @@ public class MultiSourceChatOrchestrator {
     private final ConversationRepository conversationRepository;
     private final UnifiedExecutionService executionService;
     private final ConversationStateManager stateManager;
+    private final MessageRepository messageRepository;
 
     /**
      * Process user message
@@ -50,6 +53,9 @@ public class MultiSourceChatOrchestrator {
 
             // Add user message to state
             stateManager.addUserMessage(conversationId, request.getUserMessage());
+
+            // Reset any previous AI response
+            Message systemMessage = addSystemMessage(conversationId, "Processing your request...");
 
             // Phase 1: Extract schemas from all data sources
             sendActivity(conversationId, wsUser, AIActivityPhase.MAPPING_DATA_SOURCES, "in_progress",
@@ -218,5 +224,14 @@ public class MultiSourceChatOrchestrator {
 
         messagingTemplate.convertAndSendToUser(wsUser, "/queue/ai/response", errorResponse);
         messagingTemplate.convertAndSendToUser(wsUser, "/queue/ai/error", errorResponse);
+    }
+
+    public Message addSystemMessage(Long conversationId, String content) {
+        Message message = Message.builder()
+                .content(content)
+                .sentByUser(false)
+                .conversation(conversationId)
+                .build();
+        return messageRepository.save(message);
     }
 }

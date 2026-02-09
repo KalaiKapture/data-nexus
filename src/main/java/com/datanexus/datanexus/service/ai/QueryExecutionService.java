@@ -1,6 +1,7 @@
 package com.datanexus.datanexus.service.ai;
 
 import com.datanexus.datanexus.entity.DatabaseConnection;
+import com.datanexus.datanexus.util.JdbcUrlBuilder;
 import lombok.Builder;
 import lombok.Getter;
 import lombok.RequiredArgsConstructor;
@@ -37,7 +38,7 @@ public class QueryExecutionService {
                     .build();
         }
 
-        String jdbcUrl = buildJdbcUrl(conn.getType(), conn.getHost(), conn.getPort(), conn.getDatabase());
+        String jdbcUrl = JdbcUrlBuilder.buildUrl(conn.getType(), conn.getHost(), conn.getPort(), conn.getDatabase());
         long startTime = System.currentTimeMillis();
 
         try (Connection dbConn = DriverManager.getConnection(jdbcUrl, conn.getUsername(), conn.getPassword())) {
@@ -93,26 +94,25 @@ public class QueryExecutionService {
     }
 
     private Object formatValue(Object value) {
-        if (value == null) return null;
-        if (value instanceof java.sql.Timestamp ts) return ts.toInstant().toString();
-        if (value instanceof java.sql.Date d) return d.toString();
-        if (value instanceof java.sql.Time t) return t.toString();
-        if (value instanceof byte[]) return "[binary data]";
+        if (value == null)
+            return null;
+        if (value instanceof java.sql.Timestamp ts)
+            return ts.toInstant().toString();
+        if (value instanceof java.sql.Date d)
+            return d.toString();
+        if (value instanceof java.sql.Time t)
+            return t.toString();
+        if (value instanceof byte[])
+            return "[binary data]";
         return value;
     }
 
     private String sanitizeErrorMessage(String message) {
-        if (message == null) return "Unknown database error";
+        if (message == null)
+            return "Unknown database error";
         return message
                 .replaceAll("password=\\S+", "password=***")
                 .replaceAll("jdbc:[^\\s]+", "[connection-url]");
     }
 
-    private String buildJdbcUrl(String type, String host, String port, String database) {
-        return switch (type.toLowerCase()) {
-            case "postgresql" -> "jdbc:postgresql://" + host + ":" + port + "/" + database;
-            case "mysql" -> "jdbc:mysql://" + host + ":" + port + "/" + database;
-            default -> "jdbc:" + type + "://" + host + ":" + port + "/" + database;
-        };
-    }
 }
