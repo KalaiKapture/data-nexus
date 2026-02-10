@@ -1,6 +1,7 @@
 package com.datanexus.datanexus.enums;
 
 import lombok.Getter;
+
 import java.util.Arrays;
 import java.util.List;
 
@@ -59,8 +60,7 @@ public enum DatabaseType {
     public boolean isSql() {
         return switch (this) {
             case POSTGRESQL, MYSQL, SQLITE, SUPABASE, STARROCKS,
-                    CLICKHOUSE, SNOWFLAKE, BIGQUERY ->
-                true;
+                 CLICKHOUSE, SNOWFLAKE, BIGQUERY -> true;
             default -> false;
         };
     }

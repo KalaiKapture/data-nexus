@@ -1,23 +1,21 @@
 package com.datanexus.datanexus.service.ai;
 
+import com.datanexus.datanexus.dto.websocket.AIActivityMessage;
 import com.datanexus.datanexus.dto.websocket.AnalyzeRequest;
 import com.datanexus.datanexus.dto.websocket.AnalyzeResponse;
 import com.datanexus.datanexus.dto.websocket.ClarificationRequest;
-import com.datanexus.datanexus.entity.Conversation;
-import com.datanexus.datanexus.entity.DatabaseConnection;
-import com.datanexus.datanexus.entity.Message;
-import com.datanexus.datanexus.entity.User;
+import com.datanexus.datanexus.entity.*;
 import com.datanexus.datanexus.repository.ConversationRepository;
 import com.datanexus.datanexus.repository.DatabaseConnectionRepository;
 import com.datanexus.datanexus.repository.MessageRepository;
 import com.datanexus.datanexus.service.ai.provider.*;
-import com.datanexus.datanexus.service.datasource.DataRequest;
 import com.datanexus.datanexus.service.datasource.DataSource;
 import com.datanexus.datanexus.service.datasource.DataSourceRegistry;
 import com.datanexus.datanexus.service.datasource.UnifiedExecutionService;
 import com.datanexus.datanexus.service.datasource.schema.SourceSchema;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import net.sf.json.JSONObject;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
 
@@ -53,13 +51,21 @@ public class MultiSourceChatOrchestrator {
 
             // Add user message to state
             stateManager.addUserMessage(conversationId, request.getUserMessage());
+            Message userMessage = Message.builder()
+                    .content(request.getUserMessage())
+                    .sentByUser(true)
+                    .conversation(conversationId)
+                    .build();
+            messageRepository.save(userMessage);
+            sendMessage(conversationId, wsUser, AIActivityPhase.UNDERSTANDING_INTENT, "received", JSONObject.fromObject(userMessage).toString());
+
 
             // Reset any previous AI response
-            Message systemMessage = addSystemMessage(conversationId, "Processing your request...");
+            Message systemMessage = addSystemMessage(conversationId, "Processing your request...", wsUser, true);
 
             // Phase 1: Extract schemas from all data sources
             sendActivity(conversationId, wsUser, AIActivityPhase.MAPPING_DATA_SOURCES, "in_progress",
-                    "Extracting schemas from your data sources...");
+                    "Extracting schemas from your data sources...", systemMessage);
 
             List<SourceSchema> schemas = extractAllSchemas(request, user);
 
@@ -72,7 +78,7 @@ public class MultiSourceChatOrchestrator {
 
             // Phase 2: Get AI provider
             sendActivity(conversationId, wsUser, AIActivityPhase.UNDERSTANDING_INTENT, "in_progress",
-                    "Analyzing your question with AI...");
+                    "Analyzing your question with AI...", systemMessage);
 
             String providerName = request.getAiProvider() != null ? request.getAiProvider() : "gemini";
             AIProvider aiProvider = aiProviderFactory.getProvider(providerName);
@@ -91,12 +97,12 @@ public class MultiSourceChatOrchestrator {
             // Phase 5: Handle response type
             switch (aiResponse.getType()) {
                 case CLARIFICATION_NEEDED -> {
-                    sendClarificationRequest(conversationId, wsUser, aiResponse);
+                    sendClarificationRequest(conversationId, wsUser, aiResponse, systemMessage);
                     return;
                 }
 
                 case DIRECT_ANSWER -> {
-                    sendDirectAnswer(conversationId, wsUser, aiResponse);
+                    sendDirectAnswer(conversationId, wsUser, aiResponse, systemMessage);
                     return;
                 }
 
@@ -110,14 +116,14 @@ public class MultiSourceChatOrchestrator {
 
             // Phase 6: Execute data requests
             sendActivity(conversationId, wsUser, AIActivityPhase.EXECUTING_QUERIES, "in_progress",
-                    "Executing queries across your data sources...");
+                    "Executing queries across your data sources...", systemMessage);
 
             List<AnalyzeResponse.QueryResult> queryResults = executionService.executeAll(
                     aiResponse.getDataRequests(),
                     request.getConnectionIds(),
                     user); // Phase 7: Send final response
             sendActivity(conversationId, wsUser, AIActivityPhase.COMPLETED, "success",
-                    "Analysis complete!");
+                    "Analysis complete!", systemMessage);
 
             AnalyzeResponse response = AnalyzeResponse.success(
                     conversationId,
@@ -178,9 +184,9 @@ public class MultiSourceChatOrchestrator {
         return schemas;
     }
 
-    private void sendClarificationRequest(Long conversationId, String wsUser, AIResponse aiResponse) {
+    private void sendClarificationRequest(Long conversationId, String wsUser, AIResponse aiResponse, Message systemMessage) {
         sendActivity(conversationId, wsUser, AIActivityPhase.UNDERSTANDING_INTENT, "waiting",
-                "I need clarification...");
+                "I need clarification...", systemMessage);
 
         ClarificationRequest clarificationRequest = ClarificationRequest.builder()
                 .conversationId(conversationId)
@@ -188,13 +194,13 @@ public class MultiSourceChatOrchestrator {
                 .suggestedOptions(aiResponse.getSuggestedOptions())
                 .timestamp(Instant.now())
                 .build();
-
+        addSystemMessage(conversationId, JSONObject.fromObject(clarificationRequest).toString(), wsUser, false);
         messagingTemplate.convertAndSendToUser(wsUser, "/queue/ai/clarification", clarificationRequest);
     }
 
-    private void sendDirectAnswer(Long conversationId, String wsUser, AIResponse aiResponse) {
+    private void sendDirectAnswer(Long conversationId, String wsUser, AIResponse aiResponse, Message systemMessage) {
         sendActivity(conversationId, wsUser, AIActivityPhase.COMPLETED, "success",
-                "Answer ready!");
+                "Answer ready!", systemMessage);
 
         AnalyzeResponse response = AnalyzeResponse.success(
                 conversationId,
@@ -206,32 +212,52 @@ public class MultiSourceChatOrchestrator {
     }
 
     private void sendActivity(Long conversationId, String wsUser, AIActivityPhase phase,
-                              String status, String message) {
+                              String status, String message, Message systemMessage) {
+        Activities activities = Activities.builder()
+                .conversation(conversationId)
+                .content(message)
+                .type("ACTIVITY")
+                .messageId(systemMessage.getId())
+                .build();
+        activities = messageRepository.saveActivity(activities);
         messagingTemplate.convertAndSendToUser(wsUser, "/queue/ai/activity",
                 Map.of(
                         "conversationId", conversationId,
                         "phase", phase.getCode(),
                         "status", status,
-                        "message", message,
+                        "message", JSONObject.fromObject(activities).toString(),
                         "timestamp", Instant.now()));
     }
 
     private void sendErrorResponse(Long conversationId, String wsUser, String code,
                                    String message, String suggestion) {
-        sendActivity(conversationId, wsUser, AIActivityPhase.ERROR, "error", message);
-
         AnalyzeResponse errorResponse = AnalyzeResponse.error(conversationId, code, message, suggestion);
 
         messagingTemplate.convertAndSendToUser(wsUser, "/queue/ai/response", errorResponse);
         messagingTemplate.convertAndSendToUser(wsUser, "/queue/ai/error", errorResponse);
     }
 
-    public Message addSystemMessage(Long conversationId, String content) {
+    public Message addSystemMessage(Long conversationId, String content, String wsUser, boolean sendActivity) {
         Message message = Message.builder()
                 .content(content)
                 .sentByUser(false)
                 .conversation(conversationId)
                 .build();
-        return messageRepository.save(message);
+        message = messageRepository.save(message);
+        if (sendActivity) {
+            sendMessage(conversationId, wsUser, AIActivityPhase.UNDERSTANDING_INTENT, "Initiated", JSONObject.fromObject(message).toString());
+        }
+        return message;
+    }
+
+    private void sendMessage(Long conversationId, String user, AIActivityPhase phase,
+                             String status, String message) {
+        AIActivityMessage activity = AIActivityMessage.of(phase.getCode(), status, message, conversationId);
+
+        messagingTemplate.convertAndSendToUser(
+                user,
+                "/queue/ai/message",
+                activity);
+
     }
 }

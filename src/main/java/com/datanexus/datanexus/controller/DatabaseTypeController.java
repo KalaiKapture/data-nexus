@@ -4,6 +4,7 @@ import com.datanexus.datanexus.dto.DatabaseTypeDTO;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
+import org.springframework.web.bind.annotation.CrossOrigin;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
@@ -14,7 +15,8 @@ import java.util.List;
  * REST controller for database types
  */
 @RestController
-@RequestMapping("/api/database-types")
+@RequestMapping("/api/v1/database-types")
+@CrossOrigin("*")
 @RequiredArgsConstructor
 @Slf4j
 public class DatabaseTypeController {
