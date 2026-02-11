@@ -112,7 +112,7 @@ class MultiSourceChatOrchestratorTest {
                 when(dataSource.isAvailable()).thenReturn(true);
                 when(dataSource.extractSchema()).thenReturn(schema);
                 when(aiProviderFactory.getProvider("gemini")).thenReturn(aiProvider);
-                when(aiProvider.chat(any(AIRequest.class))).thenReturn(aiResponse);
+                when(aiProvider. chat(any(AIRequest.class))).thenReturn(aiResponse);
 
                 // Act
                 // orchestrator.processMessage(request, testUser, "1");
