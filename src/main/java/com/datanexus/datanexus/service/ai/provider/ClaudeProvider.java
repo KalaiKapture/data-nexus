@@ -1,12 +1,8 @@
 package com.datanexus.datanexus.service.ai.provider;
 
-import com.datanexus.datanexus.service.ai.SchemaService;
-import com.datanexus.datanexus.service.datasource.DataSourceType;
 import com.datanexus.datanexus.service.datasource.request.SqlQuery;
 import com.datanexus.datanexus.service.datasource.request.MCPToolCall;
 import com.datanexus.datanexus.service.datasource.request.MCPResourceRead;
-import com.datanexus.datanexus.service.datasource.schema.MCPCapabilities;
-import com.datanexus.datanexus.service.datasource.schema.SourceSchema;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -22,7 +18,8 @@ import java.time.Duration;
 import java.util.*;
 
 /**
- * Anthropic Claude AI provider implementation
+ * Anthropic Claude AI provider implementation.
+ * Includes schema + sample data in the prompt for accurate query generation.
  */
 @Service
 @RequiredArgsConstructor
@@ -76,9 +73,7 @@ public class ClaudeProvider implements AIProvider {
     }
 
     public String buildPrompt(AIRequest request) {
-        // Reuse same prompt format as Gemini
-        GeminiProvider geminiProvider = new GeminiProvider(objectMapper);
-        return geminiProvider.buildPrompt(request);
+        return AIPromptBuilder.buildPrompt(request);
     }
 
     private String callClaudeAPI(String prompt) throws Exception {

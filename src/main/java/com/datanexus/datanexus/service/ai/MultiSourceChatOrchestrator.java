@@ -8,6 +8,7 @@ import com.datanexus.datanexus.entity.*;
 import com.datanexus.datanexus.repository.ConversationRepository;
 import com.datanexus.datanexus.repository.DatabaseConnectionRepository;
 import com.datanexus.datanexus.repository.MessageRepository;
+import com.datanexus.datanexus.service.SchemaCacheService;
 import com.datanexus.datanexus.service.ai.provider.*;
 import com.datanexus.datanexus.service.datasource.DataSource;
 import com.datanexus.datanexus.service.datasource.DataSourceRegistry;
@@ -38,6 +39,7 @@ public class MultiSourceChatOrchestrator {
     private final UnifiedExecutionService executionService;
     private final ConversationStateManager stateManager;
     private final MessageRepository messageRepository;
+    private final SchemaCacheService schemaCacheService;
 
     /**
      * Process user message
@@ -57,8 +59,8 @@ public class MultiSourceChatOrchestrator {
                     .conversation(conversationId)
                     .build();
             messageRepository.save(userMessage);
-            sendMessage(conversationId, wsUser, AIActivityPhase.UNDERSTANDING_INTENT, "received", JSONObject.fromObject(userMessage).toString());
-
+            sendMessage(conversationId, wsUser, AIActivityPhase.UNDERSTANDING_INTENT, "received",
+                    JSONObject.fromObject(userMessage).toString());
 
             // Reset any previous AI response
             Message systemMessage = addSystemMessage(conversationId, "Processing your request...", wsUser, true);
@@ -67,7 +69,7 @@ public class MultiSourceChatOrchestrator {
             sendActivity(conversationId, wsUser, AIActivityPhase.MAPPING_DATA_SOURCES, "in_progress",
                     "Extracting schemas from your data sources...", systemMessage);
 
-            List<SourceSchema> schemas = extractAllSchemas(request, user);
+            List<SourceSchema> schemas = getCachedSchemas(request, user);
 
             if (schemas.isEmpty()) {
                 sendErrorResponse(conversationId, wsUser, "NO_SCHEMAS",
@@ -159,12 +161,26 @@ public class MultiSourceChatOrchestrator {
         return conversation.getId();
     }
 
-    private List<SourceSchema> extractAllSchemas(AnalyzeRequest request, User user) {
+    /**
+     * Get schemas from cache. Falls back to live extraction and auto-caches on
+     * miss.
+     */
+    private List<SourceSchema> getCachedSchemas(AnalyzeRequest request, User user) {
         List<SourceSchema> schemas = new ArrayList<>();
 
         if (request.getConnectionIds() != null) {
             for (Long connId : request.getConnectionIds()) {
                 try {
+                    // Try cache first
+                    Optional<SourceSchema> cached = schemaCacheService.getCachedSchema(connId, user.getId());
+                    if (cached.isPresent()) {
+                        schemas.add(cached.get());
+                        log.debug("Using cached schema for connection {}", connId);
+                        continue;
+                    }
+
+                    // Cache miss: fall back to live extraction
+                    log.info("Cache miss for connection {}, extracting live schema", connId);
                     DatabaseConnection conn = connectionRepository.findByIdAndUserId(connId, user.getId());
                     if (conn == null) {
                         log.warn("Connection {} not found for user {}", connId, user.getId());
@@ -174,9 +190,15 @@ public class MultiSourceChatOrchestrator {
                     DataSource dataSource = dataSourceRegistry.getDataSource(conn);
                     if (dataSource != null && dataSource.isAvailable()) {
                         schemas.add(dataSource.extractSchema());
+                        // Auto-cache for next time
+                        try {
+                            schemaCacheService.cacheSchema(connId, user.getId());
+                        } catch (Exception cacheEx) {
+                            log.warn("Failed to auto-cache schema for connection {}: {}", connId, cacheEx.getMessage());
+                        }
                     }
                 } catch (Exception e) {
-                    log.error("Failed to extract schema for connection {}: {}", connId, e.getMessage());
+                    log.error("Failed to get schema for connection {}: {}", connId, e.getMessage());
                 }
             }
         }
@@ -184,7 +206,8 @@ public class MultiSourceChatOrchestrator {
         return schemas;
     }
 
-    private void sendClarificationRequest(Long conversationId, String wsUser, AIResponse aiResponse, Message systemMessage) {
+    private void sendClarificationRequest(Long conversationId, String wsUser, AIResponse aiResponse,
+            Message systemMessage) {
         sendActivity(conversationId, wsUser, AIActivityPhase.UNDERSTANDING_INTENT, "waiting",
                 "I need clarification...", systemMessage);
 
@@ -212,7 +235,7 @@ public class MultiSourceChatOrchestrator {
     }
 
     private void sendActivity(Long conversationId, String wsUser, AIActivityPhase phase,
-                              String status, String message, Message systemMessage) {
+            String status, String message, Message systemMessage) {
         Activities activities = Activities.builder()
                 .conversation(conversationId)
                 .content(message)
@@ -230,7 +253,7 @@ public class MultiSourceChatOrchestrator {
     }
 
     private void sendErrorResponse(Long conversationId, String wsUser, String code,
-                                   String message, String suggestion) {
+            String message, String suggestion) {
         AnalyzeResponse errorResponse = AnalyzeResponse.error(conversationId, code, message, suggestion);
 
         messagingTemplate.convertAndSendToUser(wsUser, "/queue/ai/response", errorResponse);
@@ -245,13 +268,14 @@ public class MultiSourceChatOrchestrator {
                 .build();
         message = messageRepository.save(message);
         if (sendActivity) {
-            sendMessage(conversationId, wsUser, AIActivityPhase.UNDERSTANDING_INTENT, "Initiated", JSONObject.fromObject(message).toString());
+            sendMessage(conversationId, wsUser, AIActivityPhase.UNDERSTANDING_INTENT, "Initiated",
+                    JSONObject.fromObject(message).toString());
         }
         return message;
     }
 
     private void sendMessage(Long conversationId, String user, AIActivityPhase phase,
-                             String status, String message) {
+            String status, String message) {
         AIActivityMessage activity = AIActivityMessage.of(phase.getCode(), status, message, conversationId);
 
         messagingTemplate.convertAndSendToUser(

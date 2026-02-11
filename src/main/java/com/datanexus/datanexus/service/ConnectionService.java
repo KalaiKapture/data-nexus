@@ -7,6 +7,7 @@ import com.datanexus.datanexus.exception.ApiException;
 import com.datanexus.datanexus.repository.DatabaseConnectionRepository;
 import com.datanexus.datanexus.util.JdbcUrlBuilder;
 import lombok.RequiredArgsConstructor;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import java.sql.Connection;
@@ -18,9 +19,11 @@ import java.util.stream.Collectors;
 
 @Service
 @RequiredArgsConstructor
+@Slf4j
 public class ConnectionService {
 
     private final DatabaseConnectionRepository connectionRepository;
+    private final SchemaCacheService schemaCacheService;
 
     public List<ConnectionDto> getUserConnections(User user) {
         List<DatabaseConnection> connections = connectionRepository.findByUserIdOrderByLastUsedDesc(user.getId());
@@ -67,6 +70,15 @@ public class ConnectionService {
                 .build();
 
         connection = connectionRepository.save(connection);
+
+        // Auto-cache schema and sample data for the new connection
+        try {
+            schemaCacheService.cacheSchema(connection.getId(), user.getId());
+        } catch (Exception e) {
+            log.warn("Failed to auto-cache schema for new connection {}: {}",
+                    connection.getId(), e.getMessage());
+        }
+
         return toDto(connection);
     }
 

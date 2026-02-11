@@ -5,6 +5,7 @@ import lombok.Builder;
 import lombok.Getter;
 
 import java.util.List;
+import java.util.Map;
 
 /**
  * Unified schema representation for all data sources
@@ -17,6 +18,9 @@ public class SourceSchema {
     private DataSourceType sourceType;
     private Object schemaData; // Database: DatabaseSchema, MCP: MCPCapabilities, etc.
 
+    // Sample data per table/collection: tableName → list of row maps
+    private Map<String, List<Map<String, Object>>> sampleData;
+
     // For NoSQL databases
     private List<CollectionSchema> collections;
 
@@ -24,7 +28,7 @@ public class SourceSchema {
     private List<KeyPatternSchema> keyPatterns;
 
     /**
-     * Create schema from database
+     * Create schema from database (without sample data)
      */
     public static SourceSchema fromDatabase(String connectionId, String connectionName,
             Object databaseSchema) {
@@ -33,6 +37,20 @@ public class SourceSchema {
                 .sourceName(connectionName)
                 .sourceType(DataSourceType.DATABASE)
                 .schemaData(databaseSchema)
+                .build();
+    }
+
+    /**
+     * Create schema from database with sample data
+     */
+    public static SourceSchema fromDatabase(String connectionId, String connectionName,
+            Object databaseSchema, Map<String, List<Map<String, Object>>> sampleData) {
+        return SourceSchema.builder()
+                .sourceId(connectionId)
+                .sourceName(connectionName)
+                .sourceType(DataSourceType.DATABASE)
+                .schemaData(databaseSchema)
+                .sampleData(sampleData)
                 .build();
     }
 

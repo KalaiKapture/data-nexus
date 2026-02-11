@@ -4,6 +4,7 @@ import com.datanexus.datanexus.dto.ApiResponse;
 import com.datanexus.datanexus.dto.connection.*;
 import com.datanexus.datanexus.entity.User;
 import com.datanexus.datanexus.service.ConnectionService;
+import com.datanexus.datanexus.service.SchemaCacheService;
 import jakarta.validation.Valid;
 import lombok.RequiredArgsConstructor;
 import org.springframework.http.HttpStatus;
@@ -21,14 +22,14 @@ import java.util.Map;
 public class ConnectionController {
 
     private final ConnectionService connectionService;
+    private final SchemaCacheService schemaCacheService;
 
     @GetMapping
     public ResponseEntity<ApiResponse<Map<String, Object>>> getConnections(@AuthenticationPrincipal User user) {
         List<ConnectionDto> connections = connectionService.getUserConnections(user);
         return ResponseEntity.ok(ApiResponse.success(Map.of(
                 "connections", connections,
-                "total", connections.size()
-        )));
+                "total", connections.size())));
     }
 
     @PostMapping("/test")
@@ -77,5 +78,14 @@ public class ConnectionController {
             @AuthenticationPrincipal User user) {
         Map<String, Object> schema = connectionService.getSchema(connectionId, user);
         return ResponseEntity.ok(ApiResponse.success(Map.of("schema", schema)));
+    }
+
+    @PostMapping("/{connectionId}/refresh-schema")
+    public ResponseEntity<ApiResponse<Map<String, String>>> refreshSchema(
+            @PathVariable Long connectionId,
+            @AuthenticationPrincipal User user) {
+        schemaCacheService.refreshSchema(connectionId, user.getId());
+        return ResponseEntity.ok(ApiResponse.success(
+                Map.of("message", "Schema and sample data refreshed successfully")));
     }
 }
