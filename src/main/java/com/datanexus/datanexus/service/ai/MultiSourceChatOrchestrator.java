@@ -79,8 +79,8 @@ public class MultiSourceChatOrchestrator {
             }
 
             // Phase 2: Get AI provider
-            sendActivity(conversationId, wsUser, AIActivityPhase.UNDERSTANDING_INTENT, "in_progress",
-                    "Analyzing your question with AI...", systemMessage);
+            sendActivity(conversationId, wsUser, AIActivityPhase.AI_THINKING, "in_progress",
+                    "AI is analyzing your question...", systemMessage);
 
             String providerName = request.getAiProvider() != null ? request.getAiProvider() : "gemini";
             AIProvider aiProvider = aiProviderFactory.getProvider(providerName);
@@ -93,8 +93,11 @@ public class MultiSourceChatOrchestrator {
                     .preferences(new HashMap<>())
                     .build();
 
-            // Phase 4: Get AI response
-            AIResponse aiResponse = aiProvider.chat(aiRequest);
+            // Phase 4: Stream AI response — each chunk is forwarded as an activity
+            AIResponse aiResponse = aiProvider.streamChat(aiRequest, chunk -> {
+                sendActivity(conversationId, wsUser, AIActivityPhase.AI_THINKING,
+                        "in_progress", chunk, systemMessage);
+            });
 
             // Phase 5: Handle response type
             switch (aiResponse.getType()) {

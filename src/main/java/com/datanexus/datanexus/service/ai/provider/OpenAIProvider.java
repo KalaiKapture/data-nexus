@@ -1,8 +1,5 @@
 package com.datanexus.datanexus.service.ai.provider;
 
-import com.datanexus.datanexus.service.datasource.request.MCPResourceRead;
-import com.datanexus.datanexus.service.datasource.request.MCPToolCall;
-import com.datanexus.datanexus.service.datasource.request.SqlQuery;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -16,11 +13,10 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.*;
+import java.util.stream.Stream;
 
 /**
- * OpenAI AI provider implementation.
- * Uses the same prompt format as Gemini/Claude (including schema + sample
- * data).
+ * OpenAI AI provider implementation with streaming support.
  */
 @Service
 @RequiredArgsConstructor
@@ -64,7 +60,6 @@ public class OpenAIProvider implements AIProvider {
 
         try {
             String prompt = AIPromptBuilder.buildPrompt(request);
-
             String responseJson = callOpenAIAPI(prompt);
             return parseOpenAIResponse(responseJson);
 
@@ -76,6 +71,28 @@ public class OpenAIProvider implements AIProvider {
                     .build();
         }
     }
+
+    @Override
+    public AIResponse streamChat(AIRequest request, StreamChunkHandler chunkHandler) {
+        if (!isConfigured()) {
+            throw new IllegalStateException("OpenAI provider is not configured. Please set ai.openai.api-key");
+        }
+
+        try {
+            String prompt = AIPromptBuilder.buildPrompt(request);
+            String fullText = streamOpenAIAPI(prompt, chunkHandler);
+            return AIResponseParser.parse(fullText, objectMapper);
+
+        } catch (Exception e) {
+            log.error("Failed to stream OpenAI API: {}", e.getMessage(), e);
+            return AIResponse.builder()
+                    .type(AIResponseType.DIRECT_ANSWER)
+                    .content("I encountered an error while processing your request: " + e.getMessage())
+                    .build();
+        }
+    }
+
+    // ── Non-streaming API call ──────────────────────────────────────────
 
     private String callOpenAIAPI(String prompt) throws Exception {
         Map<String, Object> payload = Map.of(
@@ -106,72 +123,64 @@ public class OpenAIProvider implements AIProvider {
 
     private AIResponse parseOpenAIResponse(String responseJson) throws Exception {
         JsonNode root = objectMapper.readTree(responseJson);
-        JsonNode messageContent = root.path("choices").get(0).path("message").path("content");
-
-        String aiText = messageContent.asText();
-        JsonNode aiJson = objectMapper.readTree(aiText);
-
-        AIResponseType type = AIResponseType.valueOf(aiJson.path("type").asText());
-        String content = aiJson.path("content").asText();
-        String intent = aiJson.path("intent").asText("");
-
-        AIResponse.AIResponseBuilder builder = AIResponse.builder()
-                .type(type)
-                .content(content)
-                .intent(intent);
-
-        // Parse clarification if present
-        if (type == AIResponseType.CLARIFICATION_NEEDED) {
-            builder.clarificationQuestion(aiJson.path("clarificationQuestion").asText());
-            List<String> options = new ArrayList<>();
-            aiJson.path("suggestedOptions").forEach(node -> options.add(node.asText()));
-            if (!options.isEmpty()) {
-                builder.suggestedOptions(options);
-            }
-        }
-
-        // Parse data requests if present
-        if (type == AIResponseType.READY_TO_EXECUTE) {
-            builder.dataRequests(parseDataRequests(aiJson.path("dataRequests")));
-        }
-
-        return builder.build();
+        String aiText = root.path("choices").get(0).path("message").path("content").asText();
+        return AIResponseParser.parse(aiText, objectMapper);
     }
 
-    private List<com.datanexus.datanexus.service.datasource.DataRequest> parseDataRequests(JsonNode requestsNode) {
-        List<com.datanexus.datanexus.service.datasource.DataRequest> requests = new ArrayList<>();
+    // ── Streaming API call ──────────────────────────────────────────────
 
-        if (requestsNode.isArray()) {
-            for (JsonNode reqNode : requestsNode) {
-                String requestType = reqNode.path("requestType").asText();
-                String explanation = reqNode.path("explanation").asText("");
+    /**
+     * Calls OpenAI Chat Completions API with stream:true.
+     * SSE format: data: {"choices":[{"delta":{"content":"chunk"}}]}
+     * Stream ends with: data: [DONE]
+     */
+    private String streamOpenAIAPI(String prompt, StreamChunkHandler chunkHandler) throws Exception {
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("model", model);
+        payload.put("stream", true);
+        payload.put("temperature", 0.2);
+        payload.put("messages", List.of(
+                Map.of("role", "system", "content",
+                        "You are a data analyst assistant. Always respond with valid JSON."),
+                Map.of("role", "user", "content", prompt)));
 
-                switch (requestType) {
-                    case "SQL_QUERY" -> requests.add(SqlQuery.builder()
-                            .sql(reqNode.path("sql").asText())
-                            .explanation(explanation)
-                            .build());
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(apiUrl))
+                .header("Content-Type", "application/json")
+                .header("Authorization", "Bearer " + apiKey)
+                .timeout(Duration.ofSeconds(120))
+                .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(payload)))
+                .build();
 
-                    case "MCP_TOOL_CALL" -> {
-                        Map<String, Object> args = new HashMap<>();
-                        reqNode.path("arguments").fields()
-                                .forEachRemaining(entry -> args.put(entry.getKey(), entry.getValue().asText()));
+        HttpResponse<Stream<String>> response = httpClient.send(request,
+                HttpResponse.BodyHandlers.ofLines());
 
-                        requests.add(MCPToolCall.builder()
-                                .toolName(reqNode.path("toolName").asText())
-                                .arguments(args)
-                                .explanation(explanation)
-                                .build());
-                    }
-
-                    case "MCP_RESOURCE_READ" -> requests.add(MCPResourceRead.builder()
-                            .uri(reqNode.path("uri").asText())
-                            .explanation(explanation)
-                            .build());
-                }
-            }
+        if (response.statusCode() != 200) {
+            String errorBody = String.join("\n", response.body().toList());
+            throw new RuntimeException("OpenAI streaming API error: " + response.statusCode() + " - " + errorBody);
         }
 
-        return requests;
+        StringBuilder accumulated = new StringBuilder();
+
+        response.body().forEach(line -> {
+            if (line.startsWith("data: ")) {
+                String data = line.substring(6).trim();
+                if (data.equals("[DONE]") || data.isEmpty())
+                    return;
+                try {
+                    JsonNode chunk = objectMapper.readTree(data);
+                    JsonNode delta = chunk.path("choices").path(0).path("delta");
+                    String content = delta.path("content").asText("");
+                    if (!content.isEmpty()) {
+                        accumulated.append(content);
+                        chunkHandler.onChunk(content);
+                    }
+                } catch (Exception e) {
+                    log.debug("Skipping non-parseable OpenAI SSE line: {}", data);
+                }
+            }
+        });
+
+        return accumulated.toString();
     }
 }

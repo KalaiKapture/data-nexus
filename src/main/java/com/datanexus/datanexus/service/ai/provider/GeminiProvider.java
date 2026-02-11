@@ -1,8 +1,5 @@
 package com.datanexus.datanexus.service.ai.provider;
 
-import com.datanexus.datanexus.service.datasource.request.SqlQuery;
-import com.datanexus.datanexus.service.datasource.request.MCPToolCall;
-import com.datanexus.datanexus.service.datasource.request.MCPResourceRead;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
@@ -16,9 +13,10 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.util.*;
+import java.util.stream.Stream;
 
 /**
- * Google Gemini AI provider implementation
+ * Google Gemini AI provider implementation with streaming support.
  */
 @Service
 @RequiredArgsConstructor
@@ -58,7 +56,7 @@ public class GeminiProvider implements AIProvider {
         }
 
         try {
-            String prompt = buildPrompt(request);
+            String prompt = AIPromptBuilder.buildPrompt(request);
             String responseJson = callGeminiAPI(prompt);
             return parseGeminiResponse(responseJson);
 
@@ -71,9 +69,27 @@ public class GeminiProvider implements AIProvider {
         }
     }
 
-    public String buildPrompt(AIRequest request) {
-        return AIPromptBuilder.buildPrompt(request);
+    @Override
+    public AIResponse streamChat(AIRequest request, StreamChunkHandler chunkHandler) {
+        if (!isConfigured()) {
+            throw new IllegalStateException("Gemini provider is not configured. Please set ai.gemini.api-key");
+        }
+
+        try {
+            String prompt = AIPromptBuilder.buildPrompt(request);
+            String fullText = streamGeminiAPI(prompt, chunkHandler);
+            return AIResponseParser.parse(fullText, objectMapper);
+
+        } catch (Exception e) {
+            log.error("Failed to stream Gemini API: {}", e.getMessage(), e);
+            return AIResponse.builder()
+                    .type(AIResponseType.DIRECT_ANSWER)
+                    .content("I encountered an error while processing your request: " + e.getMessage())
+                    .build();
+        }
     }
+
+    // ── Non-streaming API call ──────────────────────────────────────────
 
     private String callGeminiAPI(String prompt) throws Exception {
         String url = "https://generativelanguage.googleapis.com/v1beta/models/"
@@ -104,72 +120,68 @@ public class GeminiProvider implements AIProvider {
 
     private AIResponse parseGeminiResponse(String responseJson) throws Exception {
         JsonNode root = objectMapper.readTree(responseJson);
-        JsonNode textNode = root.path("candidates").get(0).path("content").path("parts").get(0).path("text");
-
-        String aiText = textNode.asText();
-        JsonNode aiJson = objectMapper.readTree(aiText);
-
-        AIResponseType type = AIResponseType.valueOf(aiJson.path("type").asText());
-        String content = aiJson.path("content").asText();
-        String intent = aiJson.path("intent").asText("");
-
-        AIResponse.AIResponseBuilder builder = AIResponse.builder()
-                .type(type)
-                .content(content)
-                .intent(intent);
-
-        // Parse clarification if present
-        if (type == AIResponseType.CLARIFICATION_NEEDED) {
-            builder.clarificationQuestion(aiJson.path("clarificationQuestion").asText());
-            List<String> options = new ArrayList<>();
-            aiJson.path("suggestedOptions").forEach(node -> options.add(node.asText()));
-            if (!options.isEmpty()) {
-                builder.suggestedOptions(options);
-            }
-        }
-
-        // Parse data requests if present
-        if (type == AIResponseType.READY_TO_EXECUTE) {
-            builder.dataRequests(parseDataRequests(aiJson.path("dataRequests")));
-        }
-
-        return builder.build();
+        String aiText = root.path("candidates").get(0)
+                .path("content").path("parts").get(0).path("text").asText();
+        return AIResponseParser.parse(aiText, objectMapper);
     }
 
-    private List<com.datanexus.datanexus.service.datasource.DataRequest> parseDataRequests(JsonNode requestsNode) {
-        List<com.datanexus.datanexus.service.datasource.DataRequest> requests = new ArrayList<>();
+    // ── Streaming API call ──────────────────────────────────────────────
 
-        if (requestsNode.isArray()) {
-            for (JsonNode reqNode : requestsNode) {
-                String requestType = reqNode.path("requestType").asText();
-                String explanation = reqNode.path("explanation").asText("");
+    /**
+     * Calls Gemini streamGenerateContent endpoint with SSE.
+     * Each SSE data line contains a JSON object with
+     * candidates[0].content.parts[0].text.
+     */
+    private String streamGeminiAPI(String prompt, StreamChunkHandler chunkHandler) throws Exception {
+        String url = "https://generativelanguage.googleapis.com/v1beta/models/"
+                + model + ":streamGenerateContent?alt=sse&key=" + apiKey;
 
-                switch (requestType) {
-                    case "SQL_QUERY" -> requests.add(SqlQuery.builder()
-                            .sql(reqNode.path("sql").asText())
-                            .explanation(explanation)
-                            .build());
+        Map<String, Object> payload = Map.of(
+                "contents", List.of(
+                        Map.of("parts", List.of(Map.of("text", prompt)))),
+                "generationConfig", Map.of(
+                        "temperature", 0.2,
+                        "responseMimeType", "application/json"));
 
-                    case "MCP_TOOL_CALL" -> {
-                        Map<String, Object> args = new HashMap<>();
-                        reqNode.path("arguments").fields()
-                                .forEachRemaining(entry -> args.put(entry.getKey(), entry.getValue().asText()));
+        HttpRequest request = HttpRequest.newBuilder()
+                .uri(URI.create(url))
+                .header("Content-Type", "application/json")
+                .timeout(Duration.ofSeconds(120))
+                .POST(HttpRequest.BodyPublishers.ofString(objectMapper.writeValueAsString(payload)))
+                .build();
 
-                        requests.add(MCPToolCall.builder()
-                                .toolName(reqNode.path("toolName").asText())
-                                .arguments(args)
-                                .explanation(explanation)
-                                .build());
-                    }
+        HttpResponse<Stream<String>> response = httpClient.send(request,
+                HttpResponse.BodyHandlers.ofLines());
 
-                    case "MCP_RESOURCE_READ" -> requests.add(MCPResourceRead.builder()
-                            .uri(reqNode.path("uri").asText())
-                            .explanation(explanation)
-                            .build());
-                }
-            }
+        if (response.statusCode() != 200) {
+            String errorBody = String.join("\n", response.body().toList());
+            throw new RuntimeException("Gemini streaming API error: " + response.statusCode() + " - " + errorBody);
         }
 
-        return requests;
+        StringBuilder accumulated = new StringBuilder();
+
+        response.body().forEach(line -> {
+            if (line.startsWith("data: ")) {
+                String jsonData = line.substring(6).trim();
+                if (jsonData.isEmpty())
+                    return;
+                try {
+                    JsonNode chunk = objectMapper.readTree(jsonData);
+                    JsonNode parts = chunk.path("candidates").path(0)
+                            .path("content").path("parts");
+                    if (parts.isArray() && parts.size() > 0) {
+                        String text = parts.get(0).path("text").asText("");
+                        if (!text.isEmpty()) {
+                            accumulated.append(text);
+                            chunkHandler.onChunk(text);
+                        }
+                    }
+                } catch (Exception e) {
+                    log.debug("Skipping non-parseable SSE line: {}", jsonData);
+                }
+            }
+        });
+
+        return accumulated.toString();
     }
 }
