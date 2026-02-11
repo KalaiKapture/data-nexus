@@ -16,7 +16,8 @@ import java.util.*;
 import java.util.stream.Stream;
 
 /**
- * OpenAI AI provider implementation with streaming support.
+ * OpenAI AI provider implementation (non-streaming).
+ * Uses the default streamChat() fallback from AIProvider interface.
  */
 @Service
 @RequiredArgsConstructor
@@ -173,7 +174,7 @@ public class OpenAIProvider implements AIProvider {
                     String content = delta.path("content").asText("");
                     if (!content.isEmpty()) {
                         accumulated.append(content);
-                        chunkHandler.onChunk(content);
+//                        chunkHandler.onChunk(content);
                     }
                 } catch (Exception e) {
                     log.debug("Skipping non-parseable OpenAI SSE line: {}", data);

@@ -1,5 +1,6 @@
 package com.datanexus.datanexus.service.ai.provider;
 
+import com.datanexus.datanexus.entity.Message;
 import com.datanexus.datanexus.service.ai.SchemaService;
 import com.datanexus.datanexus.service.datasource.DataSourceType;
 import com.datanexus.datanexus.service.datasource.schema.MCPCapabilities;
@@ -20,7 +21,15 @@ public class AIPromptBuilder {
 
         sb.append("You are a data analyst assistant with access to multiple data sources.\n\n");
 
-        sb.append("User Question: ").append(request.getUserMessage()).append("\n\n");
+        if(!request.getConversationHistory().isEmpty()) {
+            sb.append("Conversation History:\n");
+        }
+
+        for (Message message : request.getConversationHistory()) {
+            sb.append(message.isSentByUser() ? "User" : "AI Or System").append(": ").append(message.getContent()).append("\n");
+        }
+
+        sb.append("User Current Message: ").append(request.getUserMessage()).append("\n\n");
 
         sb.append("Available Data Sources:\n");
         for (SourceSchema schema : request.getAvailableSchemas()) {

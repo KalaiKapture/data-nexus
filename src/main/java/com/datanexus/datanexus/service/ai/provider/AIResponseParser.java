@@ -23,13 +23,23 @@ public class AIResponseParser {
 
     /**
      * Parse a raw AI JSON text string into an AIResponse.
-     * The text is expected to be the structured JSON the AI was instructed to
-     * return.
+     * Handles markdown code blocks, extraneous text around JSON,
+     * and missing/invalid type fields gracefully.
      */
     public static AIResponse parse(String aiText, ObjectMapper objectMapper) throws Exception {
-        JsonNode aiJson = objectMapper.readTree(aiText);
+        String cleanText = stripMarkdownAndExtractJson(aiText);
+        JsonNode aiJson = objectMapper.readTree(cleanText);
 
-        AIResponseType type = AIResponseType.valueOf(aiJson.path("type").asText());
+        // Gracefully handle missing or invalid type
+        String typeStr = aiJson.path("type").asText("").trim();
+        AIResponseType type;
+        try {
+            type = AIResponseType.valueOf(typeStr);
+        } catch (IllegalArgumentException e) {
+            // If type is empty or invalid, treat as DIRECT_ANSWER
+            type = AIResponseType.DIRECT_ANSWER;
+        }
+
         String content = aiJson.path("content").asText();
         String intent = aiJson.path("intent").asText("");
 
@@ -91,5 +101,40 @@ public class AIResponseParser {
         }
 
         return requests;
+    }
+
+    /**
+     * Strip markdown code blocks and extract JSON from AI text.
+     * Handles cases like: ```json\n{...}\n``` or text before/after JSON.
+     */
+    private static String stripMarkdownAndExtractJson(String text) {
+        if (text == null || text.isBlank()) {
+            return "{}";
+        }
+
+        String cleaned = text.trim();
+
+        // Strip markdown code blocks: ```json ... ``` or ``` ... ```
+        if (cleaned.startsWith("```")) {
+            int firstNewline = cleaned.indexOf('\n');
+            if (firstNewline > 0) {
+                cleaned = cleaned.substring(firstNewline + 1);
+            }
+            if (cleaned.endsWith("```")) {
+                cleaned = cleaned.substring(0, cleaned.length() - 3);
+            }
+            cleaned = cleaned.trim();
+        }
+
+        // If still not starting with {, try to extract JSON object
+        if (!cleaned.startsWith("{")) {
+            int jsonStart = cleaned.indexOf('{');
+            int jsonEnd = cleaned.lastIndexOf('}');
+            if (jsonStart >= 0 && jsonEnd > jsonStart) {
+                cleaned = cleaned.substring(jsonStart, jsonEnd + 1);
+            }
+        }
+
+        return cleaned;
     }
 }

@@ -82,10 +82,15 @@ public class ConnectionController {
 
     @PostMapping("/{connectionId}/refresh-schema")
     public ResponseEntity<ApiResponse<Map<String, String>>> refreshSchema(
-            @PathVariable Long connectionId,
+            @PathVariable("connectionId") Long connectionId,
             @AuthenticationPrincipal User user) {
+
         schemaCacheService.refreshSchema(connectionId, user.getId());
-        return ResponseEntity.ok(ApiResponse.success(
-                Map.of("message", "Schema and sample data refreshed successfully")));
+
+        return ResponseEntity.ok(
+                ApiResponse.success(
+                        Map.of("message", "Schema and sample data refreshed successfully")
+                )
+        );
     }
 }
