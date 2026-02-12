@@ -21,16 +21,16 @@ public class AIPromptBuilder {
 
         sb.append("You are a data analyst assistant with access to multiple data sources.\n\n");
 
-        if(!request.getConversationHistory().isEmpty()) {
+        if (!request.getConversationHistory().isEmpty()) {
             sb.append("Conversation History:\n");
         }
 
         for (Message message : request.getConversationHistory()) {
-            sb.append(message.isSentByUser() ? "User" : "AI Or System").append(": ").append(message.getContent()).append("\n");
+            sb.append(message.isSentByUser() ? "User" : "AI Or System").append(": ").append(message.getContent())
+                    .append("\n");
         }
 
         sb.append("User Current Message: ").append(request.getUserMessage()).append("\n\n");
-
         sb.append("Available Data Sources:\n");
         for (SourceSchema schema : request.getAvailableSchemas()) {
             sb.append(formatSchema(schema)).append("\n\n");
@@ -57,10 +57,22 @@ public class AIPromptBuilder {
         sb.append("      \"toolName\": \"for MCP tool calls\",\n");
         sb.append("      \"arguments\": {\"key\": \"value\"},\n");
         sb.append("      \"uri\": \"for MCP resource reads\",\n");
-        sb.append("      \"explanation\": \"what this request does\"\n");
+        sb.append("      \"explanation\": \"what this request does\",\n");
+        sb.append("      \"step\": 1,\n");
+        sb.append("      \"dependsOn\": null,\n");
+        sb.append("      \"outputAs\": \"$variable_name\",\n");
+        sb.append("      \"outputField\": \"column_name\"\n");
         sb.append("    }\n");
         sb.append("  ]\n");
-        sb.append("}\n");
+        sb.append("}\n\n");
+
+        sb.append("CROSS-DATABASE CHAINING:\n");
+        sb.append("When data is spread across multiple sources, use step ordering and $variable placeholders.\n");
+        sb.append("Example: to find activities of user 'johndoe' when users and activities are in different databases:\n");
+        sb.append("  Step 1: SELECT id FROM users WHERE username='johndoe' → outputAs: \"$user_id\", outputField: \"id\"\n");
+        sb.append("  Step 2 (dependsOn: 1): SELECT * FROM activities WHERE user_id = $user_id\n");
+        sb.append("The system will execute step 1, extract the value, substitute $user_id in step 2, then execute step 2.\n");
+        sb.append("Only use chaining when data spans DIFFERENT sources. For same-source queries, use SQL JOINs.\n\n");
 
         return sb.toString();
     }

@@ -6,13 +6,21 @@ import lombok.Builder;
 import lombok.Getter;
 
 /**
- * SQL query request for database data sources
+ * SQL query request for database data sources.
+ * Supports cross-database chaining via step/dependsOn/outputAs fields.
  */
 @Getter
 @Builder
 public class SqlQuery implements DataRequest {
     private String sql;
     private String explanation;
+
+    // Chaining fields
+    private String sourceId;
+    private Integer step;
+    private Integer dependsOn;
+    private String outputAs;
+    private String outputField;
 
     @Override
     public DataRequestType getRequestType() {

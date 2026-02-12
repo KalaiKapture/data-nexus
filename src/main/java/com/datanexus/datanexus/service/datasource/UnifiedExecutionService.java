@@ -4,19 +4,17 @@ import com.datanexus.datanexus.dto.websocket.AnalyzeResponse;
 import com.datanexus.datanexus.entity.DatabaseConnection;
 import com.datanexus.datanexus.entity.User;
 import com.datanexus.datanexus.repository.DatabaseConnectionRepository;
-import com.datanexus.datanexus.service.datasource.request.MCPResourceRead;
-import com.datanexus.datanexus.service.datasource.request.MCPToolCall;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
-import java.util.ArrayList;
-import java.util.HashMap;
-import java.util.List;
-import java.util.Map;
+import java.util.*;
+import java.util.stream.Collectors;
 
 /**
- * Unified execution service for all types of data requests
+ * Unified execution service for all types of data requests.
+ * Supports cross-database query chaining via step ordering and $variable
+ * substitution.
  */
 @Service
 @RequiredArgsConstructor
@@ -27,23 +25,105 @@ public class UnifiedExecutionService {
     private final DatabaseConnectionRepository connectionRepository;
 
     /**
-     * Execute all data requests and return formatted results
+     * Execute all data requests and return formatted results.
+     * If requests have step/dependsOn fields, executes them in dependency order
+     * with variable substitution between steps.
      */
     public List<AnalyzeResponse.QueryResult> executeAll(
             List<DataRequest> requests,
             List<Long> connectionIds,
             User user) {
 
-        List<AnalyzeResponse.QueryResult> results = new ArrayList<>();
+        boolean hasSteps = requests.stream().anyMatch(r -> r.getStep() != null);
 
-        // Group requests by connection for efficiency
+        if (hasSteps) {
+            return executeWithChaining(requests, connectionIds, user);
+        } else {
+            return executeParallel(requests, connectionIds, user);
+        }
+    }
+
+    // ── Chained (step-ordered) execution ─────────────────────────────────
+
+    private List<AnalyzeResponse.QueryResult> executeWithChaining(
+            List<DataRequest> requests,
+            List<Long> connectionIds,
+            User user) {
+
+        List<AnalyzeResponse.QueryResult> allResults = new ArrayList<>();
+        Map<String, String> variables = new HashMap<>(); // $var → resolved value
+
+        // Sort by step
+        List<DataRequest> ordered = requests.stream()
+                .sorted(Comparator.comparingInt(r -> r.getStep() != null ? r.getStep() : Integer.MAX_VALUE))
+                .toList();
+
+        for (DataRequest request : ordered) {
+            // Substitute variables in this request's SQL
+            DataRequest resolved = request;
+            if (request.getDependsOn() != null && !variables.isEmpty()) {
+                String originalSql = getRequestSql(request);
+                if (originalSql != null) {
+                    String resolvedSql = QueryPlanExecutor.replaceVariables(originalSql, variables);
+                    resolved = rebuildWithSql(request, resolvedSql);
+                    log.info("Step {} resolved: {} → {}", request.getStep(), originalSql, resolvedSql);
+                }
+            }
+
+            // Find the connection for this request
+            Long connectionId = resolveConnectionId(resolved, connectionIds);
+            if (connectionId == null) {
+                allResults.add(createErrorResult("No matching connection found for sourceId: "
+                        + resolved.getSourceId(), null));
+                continue;
+            }
+
+            DatabaseConnection connection = connectionRepository.findByIdAndUserId(connectionId, user.getId());
+            if (connection == null) {
+                allResults.add(createErrorResult("Connection not found", connectionId));
+                continue;
+            }
+
+            DataSource dataSource = dataSourceRegistry.getDataSource(connection);
+            if (dataSource == null || !dataSource.isAvailable()) {
+                allResults.add(createErrorResult("Data source not available", connectionId));
+                continue;
+            }
+
+            // Execute
+            AnalyzeResponse.QueryResult result = executeRequest(dataSource, resolved, connection);
+            allResults.add(result);
+
+            // Extract output variable if defined
+            if (request.getOutputAs() != null && request.getOutputField() != null && result.getData() != null) {
+                String value = QueryPlanExecutor.extractOutputValue(result.getData(), request.getOutputField());
+                if (value != null) {
+                    variables.put(request.getOutputAs(), value);
+                    log.info("Step {} extracted {} = {}", request.getStep(), request.getOutputAs(), value);
+                } else {
+                    log.warn("Step {} could not extract {} from field '{}'",
+                            request.getStep(), request.getOutputAs(), request.getOutputField());
+                }
+            }
+        }
+
+        return allResults;
+    }
+
+    // ── Parallel (no-dependency) execution ───────────────────────────────
+
+    private List<AnalyzeResponse.QueryResult> executeParallel(
+            List<DataRequest> requests,
+            List<Long> connectionIds,
+            User user) {
+
+        List<AnalyzeResponse.QueryResult> results = new ArrayList<>();
         Map<Long, List<DataRequest>> requestsByConnection = groupByConnection(requests, connectionIds);
 
         for (Map.Entry<Long, List<DataRequest>> entry : requestsByConnection.entrySet()) {
             Long connectionId = entry.getKey();
             List<DataRequest> connectionRequests = entry.getValue();
 
-            // Get connection and data source
             DatabaseConnection connection = connectionRepository.findByIdAndUserId(connectionId, user.getId());
             if (connection == null) {
                 log.warn("Connection {} not found for user {}", connectionId, user.getId());
@@ -58,7 +138,6 @@ public class UnifiedExecutionService {
                 continue;
             }
 
-            // Execute each request for this connection
             for (DataRequest request : connectionRequests) {
                 results.add(executeRequest(dataSource, request, connection));
             }
@@ -67,9 +146,8 @@ public class UnifiedExecutionService {
         return results;
     }
 
-    /**
-     * Execute a single data request
-     */
+    // ── Helpers ──────────────────────────────────────────────────────────
+
     private AnalyzeResponse.QueryResult executeRequest(
             DataSource dataSource,
             DataRequest request,
@@ -118,9 +196,50 @@ public class UnifiedExecutionService {
     }
 
     /**
-     * Group requests by their target connection
-     * For now, we'll use a simple heuristic: match by request type to connection
-     * type
+     * Resolve the connection ID for a request.
+     * Uses explicit sourceId if available, otherwise falls back to first
+     * connection.
+     */
+    private Long resolveConnectionId(DataRequest request, List<Long> connectionIds) {
+        if (request.getSourceId() != null) {
+            try {
+                Long sourceId = Long.parseLong(request.getSourceId());
+                if (connectionIds.contains(sourceId)) {
+                    return sourceId;
+                }
+                log.warn("sourceId {} not in provided connectionIds {}", sourceId, connectionIds);
+            } catch (NumberFormatException e) {
+                log.warn("Invalid sourceId format: {}", request.getSourceId());
+            }
+        }
+        // Fallback to first connection
+        return connectionIds != null && !connectionIds.isEmpty() ? connectionIds.get(0) : null;
+    }
+
+    private String getRequestSql(DataRequest request) {
+        if (request instanceof com.datanexus.datanexus.service.datasource.request.SqlQuery sq) {
+            return sq.getSql();
+        }
+        return null;
+    }
+
+    private DataRequest rebuildWithSql(DataRequest request, String newSql) {
+        if (request instanceof com.datanexus.datanexus.service.datasource.request.SqlQuery sq) {
+            return com.datanexus.datanexus.service.datasource.request.SqlQuery.builder()
+                    .sql(newSql)
+                    .explanation(sq.getExplanation())
+                    .sourceId(sq.getSourceId())
+                    .step(sq.getStep())
+                    .dependsOn(sq.getDependsOn())
+                    .outputAs(sq.getOutputAs())
+                    .outputField(sq.getOutputField())
+                    .build();
+        }
+        return request;
+    }
+
+    /**
+     * Group requests by their target connection (legacy mode without sourceId).
      */
     private Map<Long, List<DataRequest>> groupByConnection(
             List<DataRequest> requests,
@@ -133,27 +252,11 @@ public class UnifiedExecutionService {
             return grouped;
         }
 
-        // Simple strategy: assign all SQL to first connection, MCP to rest
-        // TODO: Improve this with explicit sourceId in DataRequest
-        Long firstConnection = connectionIds.get(0);
-
         for (DataRequest request : requests) {
-            Long targetConnection = firstConnection;
-
-            // Try to match request type to connection type
-            if (request instanceof MCPToolCall || request instanceof MCPResourceRead) {
-                // Find an MCP connection
-                for (Long connId : connectionIds) {
-                    // Would need to check connection type, for now use second connection if
-                    // available
-                    if (connectionIds.size() > 1 && !connId.equals(firstConnection)) {
-                        targetConnection = connId;
-                        break;
-                    }
-                }
+            Long targetConnection = resolveConnectionId(request, connectionIds);
+            if (targetConnection != null) {
+                grouped.computeIfAbsent(targetConnection, k -> new ArrayList<>()).add(request);
             }
-
-            grouped.computeIfAbsent(targetConnection, k -> new ArrayList<>()).add(request);
         }
 
         return grouped;

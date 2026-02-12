@@ -74,10 +74,22 @@ public class AIResponseParser {
                 String requestType = reqNode.path("requestType").asText();
                 String explanation = reqNode.path("explanation").asText("");
 
+                // Chaining fields (optional)
+                String sourceId = reqNode.path("sourceId").asText(null);
+                Integer step = reqNode.has("step") ? reqNode.path("step").asInt() : null;
+                Integer dependsOn = reqNode.has("dependsOn") ? reqNode.path("dependsOn").asInt() : null;
+                String outputAs = reqNode.path("outputAs").asText(null);
+                String outputField = reqNode.path("outputField").asText(null);
+
                 switch (requestType) {
                     case "SQL_QUERY" -> requests.add(SqlQuery.builder()
                             .sql(reqNode.path("sql").asText())
                             .explanation(explanation)
+                            .sourceId(sourceId)
+                            .step(step)
+                            .dependsOn(dependsOn)
+                            .outputAs(outputAs)
+                            .outputField(outputField)
                             .build());
 
                     case "MCP_TOOL_CALL" -> {
@@ -89,12 +101,22 @@ public class AIResponseParser {
                                 .toolName(reqNode.path("toolName").asText())
                                 .arguments(args)
                                 .explanation(explanation)
+                                .sourceId(sourceId)
+                                .step(step)
+                                .dependsOn(dependsOn)
+                                .outputAs(outputAs)
+                                .outputField(outputField)
                                 .build());
                     }
 
                     case "MCP_RESOURCE_READ" -> requests.add(MCPResourceRead.builder()
                             .uri(reqNode.path("uri").asText())
                             .explanation(explanation)
+                            .sourceId(sourceId)
+                            .step(step)
+                            .dependsOn(dependsOn)
+                            .outputAs(outputAs)
+                            .outputField(outputField)
                             .build());
                 }
             }
