@@ -50,7 +50,7 @@ public class ConversationController {
 
     @GetMapping("/{conversationId}")
     public ResponseEntity<ApiResponse<Map<String, ConversationDto>>> getConversation(
-            @PathVariable Long conversationId,
+            @PathVariable("conversationId") Long conversationId,
             @AuthenticationPrincipal User user) {
         ConversationDto conversation = conversationService.getConversation(conversationId, user);
         return ResponseEntity.ok(ApiResponse.success(Map.of("conversation", conversation)));
@@ -58,7 +58,7 @@ public class ConversationController {
 
     @PutMapping("/{conversationId}")
     public ResponseEntity<ApiResponse<Map<String, ConversationDto>>> updateConversation(
-            @PathVariable Long conversationId,
+            @PathVariable("conversationId") Long conversationId,
             @RequestBody UpdateConversationRequest request,
             @AuthenticationPrincipal User user) {
         ConversationDto conversation = conversationService.updateConversation(conversationId, request, user);
@@ -67,7 +67,7 @@ public class ConversationController {
 
     @PostMapping("/{conversationId}/messages")
     public ResponseEntity<ApiResponse<Map<String, Object>>> addMessage(
-            @PathVariable Long conversationId,
+            @PathVariable("conversationId") Long conversationId,
             @Valid @RequestBody AddMessageRequest request,
             @AuthenticationPrincipal User user) {
         MessageDto message = conversationService.addMessage(conversationId, request, user);
@@ -76,7 +76,7 @@ public class ConversationController {
 
     @GetMapping("/{conversationId}/messages")
     public ResponseEntity<ApiResponse<Map<String, Object>>> getMessages(
-            @PathVariable Long conversationId,
+            @PathVariable("conversationId") Long conversationId,
             @AuthenticationPrincipal User user) {
         List<MessageDto> messages = conversationService.getMessages(conversationId, user);
         return ResponseEntity.ok(ApiResponse.success(Map.of(
@@ -87,7 +87,7 @@ public class ConversationController {
 
     @DeleteMapping("/{conversationId}")
     public ResponseEntity<ApiResponse<Void>> deleteConversation(
-            @PathVariable Long conversationId,
+            @PathVariable("conversationId") Long conversationId,
             @AuthenticationPrincipal User user) {
         conversationService.deleteConversation(conversationId, user);
         return ResponseEntity.ok(ApiResponse.success("Conversation deleted successfully"));
@@ -95,7 +95,7 @@ public class ConversationController {
 
     @PostMapping("/{conversationId}/share")
     public ResponseEntity<ApiResponse<Map<String, Object>>> shareConversation(
-            @PathVariable Long conversationId,
+            @PathVariable("conversationId") Long conversationId,
             @AuthenticationPrincipal User user) {
         ConversationDto result = conversationService.shareConversation(conversationId, user);
         return ResponseEntity.ok(ApiResponse.success(Map.of(

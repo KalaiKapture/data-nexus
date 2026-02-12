@@ -34,6 +34,9 @@ public class Message {
     @Column(name = "conversation_id", nullable = false)
     private Long conversation;
 
+    @Column(name = "type")
+    private String type;
+
     @CreationTimestamp
     private Instant createdAt;
 

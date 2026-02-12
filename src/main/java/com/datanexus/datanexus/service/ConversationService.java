@@ -59,7 +59,8 @@ public class ConversationService {
         Conversation conversation = findConversationByIdAndUser(conversationId, user.getId());
 
         if (request.getName() != null) conversation.setName(request.getName());
-        if (request.getConnectionIds() != null) conversation.setConnectionIds(toConnectionIdString(request.getConnectionIds()));
+        if (request.getConnectionIds() != null)
+            conversation.setConnectionIds(toConnectionIdString(request.getConnectionIds()));
 
         conversation = conversationRepository.save(conversation);
 
@@ -197,6 +198,7 @@ public class ConversationService {
                 .id(m.getId())
                 .content(m.getContent())
                 .sentByUser(m.isSentByUser())
+                .type(m.getType())
                 .createdAt(m.getCreatedAt())
                 .updatedAt(m.getUpdatedAt())
                 .build();

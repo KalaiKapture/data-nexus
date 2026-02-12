@@ -18,4 +18,5 @@ public class MessageDto {
     private boolean sentByUser;
     private Instant createdAt;
     private Instant updatedAt;
+    private String type;
 }

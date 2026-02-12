@@ -63,7 +63,7 @@ public class MultiSourceChatOrchestrator {
                     JSONObject.fromObject(userMessage).toString());
 
             // Reset any previous AI response
-            Message systemMessage = addSystemMessage(conversationId, "Processing your request...", wsUser, true);
+            Message systemMessage = addSystemMessage(conversationId, "Processing your request...", wsUser, true, "SYSTEM_MESSAGE");
 
             // Phase 1: Extract schemas from all data sources
             sendActivity(conversationId, wsUser, AIActivityPhase.MAPPING_DATA_SOURCES, "in_progress",
@@ -137,7 +137,9 @@ public class MultiSourceChatOrchestrator {
                     null // TODO: Visualization suggestion
             );
 
-            messagingTemplate.convertAndSendToUser(wsUser, "/queue/ai/response", response);
+            Message systemMessageResponse = addSystemMessage(conversationId, JSONObject.fromObject(response).toString(), wsUser, false, "SYSTEM_RESPONSE");
+
+            messagingTemplate.convertAndSendToUser(wsUser, "/queue/ai/response", systemMessageResponse);
 
         } catch (Exception e) {
             log.error("Error processing message: {}", e.getMessage(), e);
@@ -220,7 +222,7 @@ public class MultiSourceChatOrchestrator {
                 .suggestedOptions(aiResponse.getSuggestedOptions())
                 .timestamp(Instant.now())
                 .build();
-        Message message = addSystemMessage(conversationId, JSONObject.fromObject(clarificationRequest).toString(), wsUser, false);
+        Message message = addSystemMessage(conversationId, JSONObject.fromObject(clarificationRequest).toString(), wsUser, false, "CLARIFICATION_REQUEST");
         messagingTemplate.convertAndSendToUser(wsUser, "/queue/ai/message", message);
     }
 
@@ -263,10 +265,11 @@ public class MultiSourceChatOrchestrator {
         messagingTemplate.convertAndSendToUser(wsUser, "/queue/ai/error", errorResponse);
     }
 
-    public Message addSystemMessage(Long conversationId, String content, String wsUser, boolean sendActivity) {
+    public Message addSystemMessage(Long conversationId, String content, String wsUser, boolean sendActivity, String type) {
         Message message = Message.builder()
                 .content(content)
                 .sentByUser(false)
+                .type(type)
                 .conversation(conversationId)
                 .build();
         message = messageRepository.save(message);
