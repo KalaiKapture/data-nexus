@@ -18,4 +18,7 @@ public class AIRequest {
     private List<SourceSchema> availableSchemas;
     private List<Message> conversationHistory;
     private Map<String, Object> preferences;
+    private String userId;
+    private String conversationId;
+    private boolean firstMessage;
 }

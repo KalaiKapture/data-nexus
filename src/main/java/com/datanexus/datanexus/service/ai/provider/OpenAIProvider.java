@@ -60,7 +60,7 @@ public class OpenAIProvider implements AIProvider {
         }
 
         try {
-            String prompt = AIPromptBuilder.buildPrompt(request);
+            String prompt = AIPromptBuilder.buildPrompt(request, true);
             String responseJson = callOpenAIAPI(prompt);
             return parseOpenAIResponse(responseJson);
 
@@ -80,7 +80,7 @@ public class OpenAIProvider implements AIProvider {
         }
 
         try {
-            String prompt = AIPromptBuilder.buildPrompt(request);
+            String prompt = AIPromptBuilder.buildPrompt(request, true);
             String fullText = streamOpenAIAPI(prompt, chunkHandler);
             return AIResponseParser.parse(fullText, objectMapper);
 

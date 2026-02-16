@@ -18,6 +18,7 @@ public class AIProviderFactory {
     private final GeminiProvider geminiProvider;
     private final ClaudeProvider claudeProvider;
     private final OpenAIProvider openAIProvider;
+    private final ErenAIProvider erenAIProvider;
 
     /**
      * Get provider by name
@@ -31,6 +32,7 @@ public class AIProviderFactory {
             case "gemini" -> geminiProvider;
             case "claude" -> claudeProvider;
             case "openai" -> openAIProvider;
+            case "eren" -> erenAIProvider;
             default -> {
                 log.warn("Unknown provider: {}, using default", providerName);
                 yield getDefaultProvider();
@@ -48,6 +50,8 @@ public class AIProviderFactory {
             return claudeProvider;
         if (openAIProvider.isConfigured())
             return openAIProvider;
+        if (erenAIProvider.isConfigured())
+            return erenAIProvider;
 
         log.error("No AI providers configured!");
         throw new IllegalStateException("No AI providers are configured. Please set up at least one provider.");
@@ -64,6 +68,8 @@ public class AIProviderFactory {
             available.add("claude");
         if (openAIProvider.isConfigured())
             available.add("openai");
+        if (erenAIProvider.isConfigured())
+            available.add("eren");
         return available;
     }
 }

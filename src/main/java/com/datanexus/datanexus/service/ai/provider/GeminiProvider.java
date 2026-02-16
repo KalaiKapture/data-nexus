@@ -56,7 +56,7 @@ public class GeminiProvider implements AIProvider {
         }
 
         try {
-            String prompt = AIPromptBuilder.buildPrompt(request);
+            String prompt = AIPromptBuilder.buildPrompt(request,true);
             String responseJson = callGeminiAPI(prompt);
             return parseGeminiResponse(responseJson);
 
@@ -76,7 +76,7 @@ public class GeminiProvider implements AIProvider {
         }
 
         try {
-            String prompt = AIPromptBuilder.buildPrompt(request);
+            String prompt = AIPromptBuilder.buildPrompt(request,true);
             String fullText = streamGeminiAPI(prompt, chunkHandler);
             return AIResponseParser.parse(fullText, objectMapper);
 

@@ -63,7 +63,8 @@ public class MultiSourceChatOrchestrator {
                     JSONObject.fromObject(userMessage).toString());
 
             // Reset any previous AI response
-            Message systemMessage = addSystemMessage(conversationId, "Processing your request...", wsUser, true, "SYSTEM_MESSAGE");
+            Message systemMessage = addSystemMessage(conversationId, "Processing your request...", wsUser, true,
+                    "SYSTEM_MESSAGE");
 
             // Phase 1: Extract schemas from all data sources
             sendActivity(conversationId, wsUser, AIActivityPhase.MAPPING_DATA_SOURCES, "in_progress",
@@ -91,6 +92,9 @@ public class MultiSourceChatOrchestrator {
                     .availableSchemas(schemas)
                     .conversationHistory(state.getConversationHistory())
                     .preferences(new HashMap<>())
+                    .userId(String.valueOf(user.getId()))
+                    .conversationId(String.valueOf(conversationId))
+                    .firstMessage(state.getConversationHistory().isEmpty())
                     .build();
 
             // Phase 4: Stream AI response — each chunk is forwarded as an activity
@@ -137,7 +141,8 @@ public class MultiSourceChatOrchestrator {
                     null // TODO: Visualization suggestion
             );
 
-            Message systemMessageResponse = addSystemMessage(conversationId, JSONObject.fromObject(response).toString(), wsUser, false, "SYSTEM_RESPONSE");
+            Message systemMessageResponse = addSystemMessage(conversationId, JSONObject.fromObject(response).toString(),
+                    wsUser, false, "SYSTEM_RESPONSE");
 
             messagingTemplate.convertAndSendToUser(wsUser, "/queue/ai/response", systemMessageResponse);
 
@@ -212,7 +217,7 @@ public class MultiSourceChatOrchestrator {
     }
 
     private void sendClarificationRequest(Long conversationId, String wsUser, AIResponse aiResponse,
-                                          Message systemMessage) {
+            Message systemMessage) {
         sendActivity(conversationId, wsUser, AIActivityPhase.UNDERSTANDING_INTENT, "waiting",
                 "I need clarification...", systemMessage);
 
@@ -222,7 +227,8 @@ public class MultiSourceChatOrchestrator {
                 .suggestedOptions(aiResponse.getSuggestedOptions())
                 .timestamp(Instant.now())
                 .build();
-        Message message = addSystemMessage(conversationId, JSONObject.fromObject(clarificationRequest).toString(), wsUser, false, "CLARIFICATION_REQUEST");
+        Message message = addSystemMessage(conversationId, JSONObject.fromObject(clarificationRequest).toString(),
+                wsUser, false, "CLARIFICATION_REQUEST");
         messagingTemplate.convertAndSendToUser(wsUser, "/queue/ai/message", message);
     }
 
@@ -240,7 +246,7 @@ public class MultiSourceChatOrchestrator {
     }
 
     private void sendActivity(Long conversationId, String wsUser, AIActivityPhase phase,
-                              String status, String message, Message systemMessage) {
+            String status, String message, Message systemMessage) {
         Activities activities = Activities.builder()
                 .conversation(conversationId)
                 .content(message)
@@ -258,14 +264,15 @@ public class MultiSourceChatOrchestrator {
     }
 
     private void sendErrorResponse(Long conversationId, String wsUser, String code,
-                                   String message, String suggestion) {
+            String message, String suggestion) {
         AnalyzeResponse errorResponse = AnalyzeResponse.error(conversationId, code, message, suggestion);
 
         messagingTemplate.convertAndSendToUser(wsUser, "/queue/ai/response", errorResponse);
         messagingTemplate.convertAndSendToUser(wsUser, "/queue/ai/error", errorResponse);
     }
 
-    public Message addSystemMessage(Long conversationId, String content, String wsUser, boolean sendActivity, String type) {
+    public Message addSystemMessage(Long conversationId, String content, String wsUser, boolean sendActivity,
+            String type) {
         Message message = Message.builder()
                 .content(content)
                 .sentByUser(false)
@@ -281,7 +288,7 @@ public class MultiSourceChatOrchestrator {
     }
 
     private void sendMessage(Long conversationId, String user, AIActivityPhase phase,
-                             String status, String message) {
+            String status, String message) {
         AIActivityMessage activity = AIActivityMessage.of(phase.getCode(), status, message, conversationId);
 
         messagingTemplate.convertAndSendToUser(

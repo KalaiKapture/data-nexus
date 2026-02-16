@@ -16,18 +16,18 @@ public class AIPromptBuilder {
     private AIPromptBuilder() {
     }
 
-    public static String buildPrompt(AIRequest request) {
+    public static String buildPrompt(AIRequest request,boolean addConversationHistory) {
         StringBuilder sb = new StringBuilder();
-
         sb.append("You are a data analyst assistant with access to multiple data sources.\n\n");
 
-        if (!request.getConversationHistory().isEmpty()) {
-            sb.append("Conversation History:\n");
-        }
-
-        for (Message message : request.getConversationHistory()) {
-            sb.append(message.isSentByUser() ? "User" : "AI Or System").append(": ").append(message.getContent())
-                    .append("\n");
+        if(addConversationHistory) {
+            if (!request.getConversationHistory().isEmpty()) {
+                sb.append("Conversation History:\n");
+            }
+            for (Message message : request.getConversationHistory()) {
+                sb.append(message.isSentByUser() ? "User" : "AI Or System").append(": ").append(message.getContent())
+                        .append("\n");
+            }
         }
 
         sb.append("User Current Message: ").append(request.getUserMessage()).append("\n\n");

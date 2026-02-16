@@ -56,7 +56,7 @@ public class ClaudeProvider implements AIProvider {
         }
 
         try {
-            String prompt = AIPromptBuilder.buildPrompt(request);
+            String prompt = AIPromptBuilder.buildPrompt(request,true);
             String responseJson = callClaudeAPI(prompt);
             return parseClaudeResponse(responseJson);
 
@@ -76,7 +76,7 @@ public class ClaudeProvider implements AIProvider {
         }
 
         try {
-            String prompt = AIPromptBuilder.buildPrompt(request);
+            String prompt = AIPromptBuilder.buildPrompt(request,true);
             String fullText = streamClaudeAPI(prompt, chunkHandler);
             return AIResponseParser.parse(fullText, objectMapper);
 
