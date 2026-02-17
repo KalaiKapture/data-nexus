@@ -55,26 +55,32 @@ public class DataSourceRegistry {
             }
 
             // Route based on database type
-            return switch (dbType) {
-                case MCP -> mcpDataSourceFactory.create(connection);
-
-                // All SQL databases use DatabaseDataSource
-                case POSTGRESQL, MYSQL, SQLITE, SUPABASE, STARROCKS, CLICKHOUSE, SNOWFLAKE ->
-                    databaseDataSourceFactory.create(connection);
-
-                // MongoDB implementation
-                case MONGODB -> mongoDataSourceFactory.create(connection);
-
-                // Elasticsearch implementation
-                case ELASTICSEARCH -> elasticsearchDataSourceFactory.create(connection);
-
-                // Redis and BigQuery require specialized implementations (future)
-                case REDIS, BIGQUERY ->
-                    throw new UnsupportedOperationException(
-                            "Database type '" + dbType.getDisplayName() + "' is registered but not yet implemented. " +
-                                    "Coming soon in future updates!");
-            };
+            // Route based on database type
+            if (dbType == DatabaseType.MCP) {
+                return mcpDataSourceFactory.create(connection);
+            } else if (isSqlDatabase(dbType)) {
+                return databaseDataSourceFactory.create(connection);
+            } else if (dbType == DatabaseType.MONGODB) {
+                return mongoDataSourceFactory.create(connection);
+            } else if (dbType == DatabaseType.ELASTICSEARCH) {
+                return elasticsearchDataSourceFactory.create(connection);
+            } else {
+                // Redis, BigQuery, and others
+                throw new UnsupportedOperationException(
+                        "Database type '" + dbType.getDisplayName() + "' is registered but not yet implemented. " +
+                                "Coming soon in future updates!");
+            }
         });
+    }
+
+    private boolean isSqlDatabase(DatabaseType type) {
+        return type == DatabaseType.POSTGRESQL ||
+                type == DatabaseType.MYSQL ||
+                type == DatabaseType.SQLITE ||
+                type == DatabaseType.SUPABASE ||
+                type == DatabaseType.STARROCKS ||
+                type == DatabaseType.CLICKHOUSE ||
+                type == DatabaseType.SNOWFLAKE;
     }
 
     /**

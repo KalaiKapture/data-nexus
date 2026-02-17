@@ -223,7 +223,7 @@ public class MultiSourceChatOrchestrator {
 
         ClarificationRequest clarificationRequest = ClarificationRequest.builder()
                 .conversationId(conversationId)
-                .question(aiResponse.getClarificationQuestion())
+                .question(aiResponse.getContent())
                 .suggestedOptions(aiResponse.getSuggestedOptions())
                 .timestamp(Instant.now())
                 .build();
@@ -236,13 +236,10 @@ public class MultiSourceChatOrchestrator {
         sendActivity(conversationId, wsUser, AIActivityPhase.COMPLETED, "success",
                 "Answer ready!", systemMessage);
 
-        AnalyzeResponse response = AnalyzeResponse.success(
-                conversationId,
-                aiResponse.getContent(),
-                new ArrayList<>(),
-                null);
+        Message message = addSystemMessage(conversationId, aiResponse.getContent(),
+                wsUser, false, "SYSTEM_RESPONSE");
 
-        messagingTemplate.convertAndSendToUser(wsUser, "/queue/ai/response", response);
+        messagingTemplate.convertAndSendToUser(wsUser, "/queue/ai/response", message);
     }
 
     private void sendActivity(Long conversationId, String wsUser, AIActivityPhase phase,

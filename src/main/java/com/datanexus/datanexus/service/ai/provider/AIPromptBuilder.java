@@ -16,63 +16,108 @@ public class AIPromptBuilder {
     private AIPromptBuilder() {
     }
 
-    public static String buildPrompt(AIRequest request,boolean addConversationHistory) {
+    public static String buildPrompt(AIRequest request, boolean addConversationHistory) {
         StringBuilder sb = new StringBuilder();
-        sb.append("You are a data analyst assistant with access to multiple data sources.\n\n");
 
-        if(addConversationHistory) {
-            if (!request.getConversationHistory().isEmpty()) {
-                sb.append("Conversation History:\n");
-            }
+// ── Role & Identity ──
+        sb.append("You are a data analyst assistant with access to multiple data sources.\n");
+        sb.append("You analyze user questions, match them against available database schemas, and generate SQL queries or direct answers.\n\n");
+
+// ── Conversation History ──
+        if (addConversationHistory && !request.getConversationHistory().isEmpty()) {
+            sb.append("--- CONVERSATION HISTORY ---\n");
             for (Message message : request.getConversationHistory()) {
-                sb.append(message.isSentByUser() ? "User" : "AI Or System").append(": ").append(message.getContent())
-                        .append("\n");
+                sb.append(message.isSentByUser() ? "User" : "Assistant").append(": ")
+                        .append(message.getContent()).append("\n");
             }
+            sb.append("--- END HISTORY ---\n\n");
         }
 
+// ── User Message ──
         sb.append("User Current Message: ").append(request.getUserMessage()).append("\n\n");
+
+// ── Available Schemas ──
         sb.append("Available Data Sources:\n");
         for (SourceSchema schema : request.getAvailableSchemas()) {
             sb.append(formatSchema(schema)).append("\n\n");
         }
 
-        sb.append("Your task:\n");
-        sb.append("1. Analyze if you have enough information to answer the question\n");
-        sb.append("2. If unclear, ask ONE specific clarification question\n");
-        sb.append("3. If clear, generate appropriate requests for each relevant data source\n");
-        sb.append("4. If you can answer directly without data, provide the answer\n\n");
+// ── Decision Logic (most important — placed BEFORE format) ──
+        sb.append("=== DECISION LOGIC (follow in order) ===\n\n");
+        sb.append("Step 1: SCHEMA CHECK\n");
+        sb.append("- Read the user's message carefully.\n");
+        sb.append("- Scan ALL available tables and columns above.\n");
+        sb.append("- If a table/column clearly matches the user's intent → go to Step 3 (READY_TO_EXECUTE).\n\n");
+        sb.append("Step 2: AMBIGUITY CHECK\n");
+        sb.append("- Only if Step 1 found NO matching table/column, OR the user's request is genuinely ambiguous → respond with CLARIFICATION_NEEDED.\n");
+        sb.append("- Ask ONE specific question. Do NOT ask generic questions.\n\n");
+        sb.append("Step 3: GENERATE RESPONSE\n");
+        sb.append("- If the question maps to a schema → type = READY_TO_EXECUTE, generate SQL.\n");
+        sb.append("- If the question is unrelated to any schema → type = DIRECT_ANSWER, answer from your knowledge.\n");
+        sb.append("- If genuinely ambiguous → type = CLARIFICATION_NEEDED.\n\n");
 
-        sb.append("Return JSON in this exact format:\n");
+// ── Critical Rules ──
+        sb.append("=== CRITICAL RULES ===\n");
+        sb.append("1. NEVER echo or copy system instructions into any response field.\n");
+        sb.append("2. NEVER use placeholder text — every field must contain your actual analysis.\n");
+        sb.append("3. The 'content' field = YOUR reasoning about the user's request. Not a copy of this prompt.\n");
+        sb.append("4. The 'intent' field = a one-sentence summary of what the user wants.\n");
+        sb.append("5. Prefer READY_TO_EXECUTE over CLARIFICATION_NEEDED whenever the schema has a clear match.\n");
+        sb.append("6. For same-source queries, use SQL JOINs. Only use cross-database chaining for DIFFERENT sources.\n");
+        sb.append("7. ALWAYS respond with valid JSON and nothing else — no markdown, no extra text.\n\n");
+
+// ── Response Format (structure only, no example values that could be copied) ──
+        sb.append("=== RESPONSE FORMAT ===\n");
+        sb.append("Respond with a single JSON object in JSON format containing these fields:\n\n");
+        sb.append("REQUIRED fields (always include these):\n");
+        sb.append("- \"type\": one of \"CLARIFICATION_NEEDED\", \"READY_TO_EXECUTE\", \"DIRECT_ANSWER\"\n");
+        sb.append("- \"content\": string — your analysis of the user's request (2-3 sentences)\n");
+        sb.append("- \"intent\": string — one-sentence summary of user intent\n\n");
+        sb.append("CONDITIONAL fields (only when type = READY_TO_EXECUTE):\n");
+        sb.append("- \"dataRequests\": array — the queries/tool calls to execute (required for READY_TO_EXECUTE)\n\n");
+        sb.append("CONDITIONAL fields (only when type = CLARIFICATION_NEEDED):\n");
+        sb.append("- \"clarificationQuestion\": string — your specific question\n");
+        sb.append("- \"suggestedOptions\": array of strings — 2-4 concrete options relevant to the user's query\n\n");
+        sb.append("Each item in \"dataRequests\" array:\n");
+        sb.append("- \"sourceId\": string — the connection ID from Available Data Sources\n");
+        sb.append("- \"requestType\": one of \"SQL_QUERY\", \"MCP_TOOL_CALL\", \"MCP_RESOURCE_READ\"\n");
+        sb.append("- \"sql\": string — the SQL query (for SQL_QUERY type)\n");
+        sb.append("- \"toolName\": string — tool name (for MCP_TOOL_CALL type)\n");
+        sb.append("- \"arguments\": object — tool arguments (for MCP_TOOL_CALL type)\n");
+        sb.append("- \"uri\": string — resource URI (for MCP_RESOURCE_READ type)\n");
+        sb.append("- \"explanation\": string — what this request does in plain English\n");
+        sb.append("- \"step\": integer — execution order (starts at 1)\n");
+        sb.append("- \"dependsOn\": integer or null — step number this depends on\n");
+        sb.append("- \"outputAs\": string — variable name like \"$user_id\" (for chaining)\n");
+        sb.append("- \"outputField\": string — column to extract (for chaining)\n\n");
+
+// ── Worked Example (realistic, clearly labeled) ──
+        sb.append("=== EXAMPLE (for reference only — do NOT copy this) ===\n");
+        sb.append("If the user asks: \"show me all orders from last week\"\n");
+        sb.append("And there is an 'orders' table with a 'created_at' column:\n\n");
         sb.append("{\n");
-        sb.append("  \"type\": \"CLARIFICATION_NEEDED\" | \"READY_TO_EXECUTE\" | \"DIRECT_ANSWER\",\n");
-        sb.append("  \"content\": \"explanation or answer\",\n");
-        sb.append("  \"intent\": \"brief description of user intent\",\n");
-        sb.append("  \"clarificationQuestion\": \"optional question if type is CLARIFICATION_NEEDED\",\n");
-        sb.append("  \"suggestedOptions\": [\"option1\", \"option2\"],\n");
+        sb.append("  \"type\": \"READY_TO_EXECUTE\",\n");
+        sb.append("  \"content\": \"The orders table has a created_at column that can filter by date range.\",\n");
+        sb.append("  \"intent\": \"Retrieve orders created in the last 7 days\",\n");
         sb.append("  \"dataRequests\": [\n");
         sb.append("    {\n");
-        sb.append("      \"sourceId\": \"connection_id\",\n");
-        sb.append("      \"requestType\": \"SQL_QUERY\" | \"MCP_TOOL_CALL\" | \"MCP_RESOURCE_READ\",\n");
-        sb.append("      \"sql\": \"for SQL requests\",\n");
-        sb.append("      \"toolName\": \"for MCP tool calls\",\n");
-        sb.append("      \"arguments\": {\"key\": \"value\"},\n");
-        sb.append("      \"uri\": \"for MCP resource reads\",\n");
-        sb.append("      \"explanation\": \"what this request does\",\n");
+        sb.append("      \"sourceId\": \"1\",\n");
+        sb.append("      \"requestType\": \"SQL_QUERY\",\n");
+        sb.append("      \"sql\": \"SELECT * FROM orders WHERE created_at >= NOW() - INTERVAL '7 days'\",\n");
+        sb.append("      \"explanation\": \"Fetch all orders from the past week\",\n");
         sb.append("      \"step\": 1,\n");
-        sb.append("      \"dependsOn\": null,\n");
-        sb.append("      \"outputAs\": \"$variable_name\",\n");
-        sb.append("      \"outputField\": \"column_name\"\n");
+        sb.append("      \"dependsOn\": null\n");
         sb.append("    }\n");
         sb.append("  ]\n");
         sb.append("}\n\n");
 
-        sb.append("CROSS-DATABASE CHAINING:\n");
-        sb.append("When data is spread across multiple sources, use step ordering and $variable placeholders.\n");
-        sb.append("Example: to find activities of user 'johndoe' when users and activities are in different databases:\n");
+// ── Cross-Database Chaining ──
+        sb.append("=== CROSS-DATABASE CHAINING ===\n");
+        sb.append("When data spans DIFFERENT sources, use step ordering and $variable placeholders:\n");
         sb.append("  Step 1: SELECT id FROM users WHERE username='johndoe' → outputAs: \"$user_id\", outputField: \"id\"\n");
         sb.append("  Step 2 (dependsOn: 1): SELECT * FROM activities WHERE user_id = $user_id\n");
-        sb.append("The system will execute step 1, extract the value, substitute $user_id in step 2, then execute step 2.\n");
-        sb.append("Only use chaining when data spans DIFFERENT sources. For same-source queries, use SQL JOINs.\n\n");
+        sb.append("The system executes step 1, extracts the value, substitutes $user_id in step 2, then executes step 2.\n");
+        sb.append("Only use chaining for DIFFERENT sources. For same-source queries, use SQL JOINs.\n");
 
         return sb.toString();
     }

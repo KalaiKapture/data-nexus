@@ -40,21 +40,33 @@ public class JdbcUrlBuilder {
      * @return JDBC URL string
      */
     public static String buildUrl(DatabaseType dbType, String host, String port, String database, String filePath) {
-        return switch (dbType) {
-            case POSTGRESQL -> "jdbc:postgresql://" + host + ":" + port + "/" + database;
-            case MYSQL -> "jdbc:mysql://" + host + ":" + port + "/" + database;
-            case SQLITE -> "jdbc:sqlite:" + (filePath != null ? filePath : database);
-            case SUPABASE -> "jdbc:postgresql://" + host + ":" + port + "/" + database + "?sslmode=require";
-            case STARROCKS -> "jdbc:mysql://" + host + ":" + port + "/" + database; // Uses MySQL protocol
-            case CLICKHOUSE -> "jdbc:clickhouse://" + host + ":" + port + "/" + database;
-            case SNOWFLAKE -> "jdbc:snowflake://" + host; // Snowflake uses account identifier
-            case MONGODB -> "mongodb://" + host + ":" + port + "/" + database; // Not JDBC
-            case REDIS -> "redis://" + host + ":" + port; // Not JDBC
-            case ELASTICSEARCH -> "http://" + host + ":" + port; // Not JDBC
-            case BIGQUERY -> "jdbc:bigquery://" + host; // Special BigQuery URL
-            case MCP -> host; // MCP uses custom protocol
-            default -> "jdbc:" + dbType.getId() + "://" + host + ":" + port + "/" + database;
-        };
+        if (dbType == DatabaseType.POSTGRESQL) {
+            return "jdbc:postgresql://" + host + ":" + port + "/" + database;
+        } else if (dbType == DatabaseType.MYSQL) {
+            return "jdbc:mysql://" + host + ":" + port + "/" + database;
+        } else if (dbType == DatabaseType.SQLITE) {
+            return "jdbc:sqlite:" + (filePath != null ? filePath : database);
+        } else if (dbType == DatabaseType.SUPABASE) {
+            return "jdbc:postgresql://" + host + ":" + port + "/" + database + "?sslmode=require";
+        } else if (dbType == DatabaseType.STARROCKS) {
+            return "jdbc:mysql://" + host + ":" + port + "/" + database;
+        } else if (dbType == DatabaseType.CLICKHOUSE) {
+            return "jdbc:clickhouse://" + host + ":" + port + "/" + database;
+        } else if (dbType == DatabaseType.SNOWFLAKE) {
+            return "jdbc:snowflake://" + host;
+        } else if (dbType == DatabaseType.MONGODB) {
+            return "mongodb://" + host + ":" + port + "/" + database;
+        } else if (dbType == DatabaseType.REDIS) {
+            return "redis://" + host + ":" + port;
+        } else if (dbType == DatabaseType.ELASTICSEARCH) {
+            return "http://" + host + ":" + port;
+        } else if (dbType == DatabaseType.BIGQUERY) {
+            return "jdbc:bigquery://" + host;
+        } else if (dbType == DatabaseType.MCP) {
+            return host;
+        } else {
+            return "jdbc:" + dbType.getId() + "://" + host + ":" + port + "/" + database;
+        }
     }
 
     /**

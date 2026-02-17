@@ -154,6 +154,7 @@ public class UnifiedExecutionService {
             DatabaseConnection connection) {
 
         long startTime = System.currentTimeMillis();
+        String executedQuery = extractQueryText(request);
 
         try {
             log.info("Executing {} on {}", request.getRequestType(), dataSource.getName());
@@ -165,6 +166,7 @@ public class UnifiedExecutionService {
                 return AnalyzeResponse.QueryResult.builder()
                         .connectionId(connection.getId())
                         .connectionName(connection.getName())
+                        .query(executedQuery)
                         .data(result.getData())
                         .columns(result.getColumns())
                         .rowCount(result.getRowCount())
@@ -175,6 +177,7 @@ public class UnifiedExecutionService {
                 return AnalyzeResponse.QueryResult.builder()
                         .connectionId(connection.getId())
                         .connectionName(connection.getName())
+                        .query(executedQuery)
                         .errorMessage(result.getErrorMessage())
                         .explanation(request.getDescription())
                         .executionTimeMs(executionTime)
@@ -188,11 +191,25 @@ public class UnifiedExecutionService {
             return AnalyzeResponse.QueryResult.builder()
                     .connectionId(connection.getId())
                     .connectionName(connection.getName())
+                    .query(executedQuery)
                     .errorMessage("Execution failed: " + e.getMessage())
                     .explanation(request.getDescription())
                     .executionTimeMs(executionTime)
                     .build();
         }
+    }
+
+    private String extractQueryText(DataRequest request) {
+        if (request instanceof com.datanexus.datanexus.service.datasource.request.SqlQuery sq) {
+            return sq.getSql();
+        }
+        if (request instanceof com.datanexus.datanexus.service.datasource.request.MCPToolCall mc) {
+            return "MCP Tool: " + mc.getToolName();
+        }
+        if (request instanceof com.datanexus.datanexus.service.datasource.request.MCPResourceRead mr) {
+            return "MCP Resource: " + mr.getUri();
+        }
+        return null;
     }
 
     /**

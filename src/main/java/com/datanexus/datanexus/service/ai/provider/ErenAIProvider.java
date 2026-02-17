@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import net.sf.json.JSONObject;
 import org.springframework.stereotype.Service;
 
 import java.net.URI;
@@ -23,7 +24,7 @@ import java.util.Map;
 @Slf4j
 public class ErenAIProvider implements AIProvider {
 
-    private static final String API_URL = "http://localhost:8080/api/chat";
+    private static final String API_URL = "http://localhost:8082/api/chat";
     private final ObjectMapper objectMapper;
     private final HttpClient httpClient = HttpClient.newBuilder()
             .connectTimeout(Duration.ofSeconds(30))
@@ -47,8 +48,8 @@ public class ErenAIProvider implements AIProvider {
     @Override
     public AIResponse chat(AIRequest request) {
         try {
-            String prompt = AIPromptBuilder.buildPrompt(request,false);
-            String responseJson = callErenAPI(prompt,request);
+            String prompt = AIPromptBuilder.buildPrompt(request, false);
+            String responseJson = callErenAPI(prompt, request);
             return parseResponse(responseJson);
         } catch (Exception e) {
             log.error("Failed to call Eren API: {}", e.getMessage(), e);
@@ -63,11 +64,12 @@ public class ErenAIProvider implements AIProvider {
         return chat(request);
     }
 
-    private String callErenAPI(String prompt,AIRequest request) throws Exception {
+    private String callErenAPI(String prompt, AIRequest request) throws Exception {
         Map<String, Object> payload = new HashMap<>();
         payload.put("userId", request.getUserId());
         payload.put("conversationId", request.getConversationId());
-        payload.put("message", prompt);
+        payload.put("message", request.getUserMessage());
+        payload.put("prompt", prompt);
         payload.put("firstMessage", request.isFirstMessage());
 
         String jsonPayload = objectMapper.writeValueAsString(payload);
@@ -91,20 +93,18 @@ public class ErenAIProvider implements AIProvider {
 
     private AIResponse parseResponse(String responseBody) throws Exception {
         try {
-            // Try to parse as JSON first
-            JsonNode root = objectMapper.readTree(responseBody);
-            // If it's our standard AIResponse format
-            if (root.has("type") && root.has("content")) {
-                return objectMapper.treeToValue(root, AIResponse.class);
+            // Extract the 'reply' field which contains the actual AI response JSON
+            String replyJson = JSONObject.fromObject(responseBody).optString("reply");
+
+            if (replyJson != null && !replyJson.isBlank()) {
+                return AIResponseParser.parse(replyJson, objectMapper);
             }
-            // If it has a 'content' field only
-            if (root.has("content")) {
-                return AIResponseParser.parse(root.get("content").asText(), objectMapper);
-            }
-            // Otherwise treat whole JSON as text
+
+            // Fallback: treat the whole body as the response (legacy/simple mode)
             return AIResponseParser.parse(responseBody, objectMapper);
         } catch (Exception e) {
-            // Treat as plain text
+            log.error("Error parsing Eren API response: {}", e.getMessage());
+            // Last resort fallback
             return AIResponseParser.parse(responseBody, objectMapper);
         }
     }

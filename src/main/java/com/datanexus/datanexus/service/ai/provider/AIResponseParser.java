@@ -7,6 +7,8 @@ import com.datanexus.datanexus.service.datasource.request.SqlQuery;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
+import lombok.extern.slf4j.Slf4j;
+
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -16,6 +18,7 @@ import java.util.Map;
  * Shared utility for parsing AI JSON responses into AIResponse objects.
  * Used by all providers to avoid duplicating the parsing logic.
  */
+@Slf4j
 public class AIResponseParser {
 
     private AIResponseParser() {
@@ -76,8 +79,10 @@ public class AIResponseParser {
 
                 // Chaining fields (optional)
                 String sourceId = reqNode.path("sourceId").asText(null);
-                Integer step = reqNode.has("step") ? reqNode.path("step").asInt() : null;
-                Integer dependsOn = reqNode.has("dependsOn") ? reqNode.path("dependsOn").asInt() : null;
+                Integer step = reqNode.has("step") && !reqNode.get("step").isNull()
+                        ? reqNode.get("step").asInt() : null;
+                Integer dependsOn = reqNode.has("dependsOn") && !reqNode.get("dependsOn").isNull()
+                        ? reqNode.get("dependsOn").asInt() : null;
                 String outputAs = reqNode.path("outputAs").asText(null);
                 String outputField = reqNode.path("outputField").asText(null);
 
@@ -95,7 +100,7 @@ public class AIResponseParser {
                     case "MCP_TOOL_CALL" -> {
                         Map<String, Object> args = new HashMap<>();
                         reqNode.path("arguments").fields()
-                                .forEachRemaining(entry -> args.put(entry.getKey(), entry.getValue().asText()));
+                                .forEachRemaining(entry -> args.put(entry.getKey(), convertJsonValue(entry.getValue())));
 
                         requests.add(MCPToolCall.builder()
                                 .toolName(reqNode.path("toolName").asText())
@@ -118,11 +123,45 @@ public class AIResponseParser {
                             .outputAs(outputAs)
                             .outputField(outputField)
                             .build());
+
+                    default -> log.warn("Unknown requestType '{}' in AI response, skipping", requestType);
                 }
             }
         }
 
         return requests;
+    }
+
+    /**
+     * Convert a Jackson JsonNode to its natural Java type (preserving numbers, booleans, etc.)
+     */
+    private static Object convertJsonValue(JsonNode node) {
+        if (node == null || node.isNull()) {
+            return null;
+        }
+        if (node.isBoolean()) {
+            return node.asBoolean();
+        }
+        if (node.isInt()) {
+            return node.asInt();
+        }
+        if (node.isLong()) {
+            return node.asLong();
+        }
+        if (node.isDouble() || node.isFloat()) {
+            return node.asDouble();
+        }
+        if (node.isArray()) {
+            List<Object> list = new ArrayList<>();
+            node.forEach(item -> list.add(convertJsonValue(item)));
+            return list;
+        }
+        if (node.isObject()) {
+            Map<String, Object> map = new HashMap<>();
+            node.fields().forEachRemaining(entry -> map.put(entry.getKey(), convertJsonValue(entry.getValue())));
+            return map;
+        }
+        return node.asText();
     }
 
     /**
