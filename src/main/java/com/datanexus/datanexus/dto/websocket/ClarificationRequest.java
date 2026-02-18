@@ -16,6 +16,7 @@ import java.util.List;
 public class ClarificationRequest {
     private Long conversationId;
     private String question;
+    private String intent;
     private List<String> suggestedOptions;
     private Instant timestamp;
 }

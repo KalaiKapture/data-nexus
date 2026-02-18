@@ -142,9 +142,9 @@ public class MultiSourceChatOrchestrator {
             );
 
             Message systemMessageResponse = addSystemMessage(conversationId, JSONObject.fromObject(response).toString(),
-                    wsUser, false, "SYSTEM_RESPONSE");
+                    wsUser, true, "SYSTEM_RESPONSE");
 
-            messagingTemplate.convertAndSendToUser(wsUser, "/queue/ai/response", systemMessageResponse);
+            //   messagingTemplate.convertAndSendToUser(wsUser, "/queue/ai/response", systemMessageResponse);
 
         } catch (Exception e) {
             log.error("Error processing message: {}", e.getMessage(), e);
@@ -217,7 +217,7 @@ public class MultiSourceChatOrchestrator {
     }
 
     private void sendClarificationRequest(Long conversationId, String wsUser, AIResponse aiResponse,
-            Message systemMessage) {
+                                          Message systemMessage) {
         sendActivity(conversationId, wsUser, AIActivityPhase.UNDERSTANDING_INTENT, "waiting",
                 "I need clarification...", systemMessage);
 
@@ -225,11 +225,13 @@ public class MultiSourceChatOrchestrator {
                 .conversationId(conversationId)
                 .question(aiResponse.getContent())
                 .suggestedOptions(aiResponse.getSuggestedOptions())
+                .intent(aiResponse.getIntent())
                 .timestamp(Instant.now())
                 .build();
         Message message = addSystemMessage(conversationId, JSONObject.fromObject(clarificationRequest).toString(),
                 wsUser, false, "CLARIFICATION_REQUEST");
-        messagingTemplate.convertAndSendToUser(wsUser, "/queue/ai/message", message);
+        AIActivityMessage activity = AIActivityMessage.of(AIActivityPhase.UNDERSTANDING_INTENT.getCode(), "clarification", JSONObject.fromObject(message).toString(), conversationId);
+        messagingTemplate.convertAndSendToUser(wsUser, "/queue/ai/message", activity);
     }
 
     private void sendDirectAnswer(Long conversationId, String wsUser, AIResponse aiResponse, Message systemMessage) {
@@ -243,7 +245,7 @@ public class MultiSourceChatOrchestrator {
     }
 
     private void sendActivity(Long conversationId, String wsUser, AIActivityPhase phase,
-            String status, String message, Message systemMessage) {
+                              String status, String message, Message systemMessage) {
         Activities activities = Activities.builder()
                 .conversation(conversationId)
                 .content(message)
@@ -261,7 +263,7 @@ public class MultiSourceChatOrchestrator {
     }
 
     private void sendErrorResponse(Long conversationId, String wsUser, String code,
-            String message, String suggestion) {
+                                   String message, String suggestion) {
         AnalyzeResponse errorResponse = AnalyzeResponse.error(conversationId, code, message, suggestion);
 
         messagingTemplate.convertAndSendToUser(wsUser, "/queue/ai/response", errorResponse);
@@ -269,7 +271,7 @@ public class MultiSourceChatOrchestrator {
     }
 
     public Message addSystemMessage(Long conversationId, String content, String wsUser, boolean sendActivity,
-            String type) {
+                                    String type) {
         Message message = Message.builder()
                 .content(content)
                 .sentByUser(false)
@@ -285,7 +287,7 @@ public class MultiSourceChatOrchestrator {
     }
 
     private void sendMessage(Long conversationId, String user, AIActivityPhase phase,
-            String status, String message) {
+                             String status, String message) {
         AIActivityMessage activity = AIActivityMessage.of(phase.getCode(), status, message, conversationId);
 
         messagingTemplate.convertAndSendToUser(

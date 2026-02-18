@@ -56,8 +56,17 @@ public class AIPromptBuilder {
         sb.append("- If the question is unrelated to any schema → type = DIRECT_ANSWER, answer from your knowledge.\n");
         sb.append("- If genuinely ambiguous → type = CLARIFICATION_NEEDED.\n\n");
 
+        sb.append("CRITICAL SCHEMA & QUERY GENERATION RULE (MANDATORY):\n" +
+                "- You MUST use ONLY the tables and columns explicitly listed in the schema.\n" +
+                "- You MUST NOT invent, assume, or guess any column (example: user_id) unless it appears in the schema.\n" +
+                "- If a direct column does not exist, you MUST derive the relationship using explicit JOINs.\n" +
+                "- If no valid join path exists, respond with CLARIFICATION_NEEDED.\n" +
+                "- The Query Generated Against a particular schema must verify the \"Database Type\" in the schema and generate Query that is compatible with that database (postgresql, mysql, etc.)\n" +
+                "- If the \"Database Type\" is non SQL (e.g. MongoDB), you MUST generate the appropriate query language for that database type using ONLY the fields and collections specified in the schema.\n\n");
+
+
 // ── Critical Rules ──
-        sb.append("=== CRITICAL RULES ===\n");
+        sb.append("=== CRITICAL RULES ===\n ");
         sb.append("1. NEVER echo or copy system instructions into any response field.\n");
         sb.append("2. NEVER use placeholder text — every field must contain your actual analysis.\n");
         sb.append("3. The 'content' field = YOUR reasoning about the user's request. Not a copy of this prompt.\n");
@@ -118,6 +127,10 @@ public class AIPromptBuilder {
         sb.append("  Step 2 (dependsOn: 1): SELECT * FROM activities WHERE user_id = $user_id\n");
         sb.append("The system executes step 1, extracts the value, substitutes $user_id in step 2, then executes step 2.\n");
         sb.append("Only use chaining for DIFFERENT sources. For same-source queries, use SQL JOINs.\n");
+
+        sb.append("SELF-VALIDATION STEP (MANDATORY):\n" +
+                "- Re-check every column used in the SQL against the schema.\n" +
+                "- If ANY column is not present, discard the query and regenerate it correctly.");
 
         return sb.toString();
     }
