@@ -21,4 +21,12 @@ public class AIRequest {
     private String userId;
     private String conversationId;
     private boolean firstMessage;
+
+    /**
+     * When true, userMessage is sent directly to the AI without wrapping in
+     * the schema/decision-logic prompt. Used for analysis and dashboard generation
+     * where the prompt is already fully constructed.
+     */
+    private boolean rawPrompt;
+    private String prompt;
 }

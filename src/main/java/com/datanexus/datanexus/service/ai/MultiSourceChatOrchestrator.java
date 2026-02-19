@@ -40,6 +40,7 @@ public class MultiSourceChatOrchestrator {
     private final ConversationStateManager stateManager;
     private final MessageRepository messageRepository;
     private final SchemaCacheService schemaCacheService;
+    private final DataAnalysisService dataAnalysisService;
 
     /**
      * Process user message
@@ -130,21 +131,71 @@ public class MultiSourceChatOrchestrator {
             List<AnalyzeResponse.QueryResult> queryResults = executionService.executeAll(
                     aiResponse.getDataRequests(),
                     request.getConnectionIds(),
-                    user); // Phase 7: Send final response
-            sendActivity(conversationId, wsUser, AIActivityPhase.COMPLETED, "success",
-                    "Analysis complete!", systemMessage);
+                    user);
 
-            AnalyzeResponse response = AnalyzeResponse.success(
+            // ── System Response 1: Query results ─────────────────────────────
+            // Send immediately after execution so the user sees data right away.
+            sendActivity(conversationId, wsUser, AIActivityPhase.EXECUTING_QUERIES, "success",
+                    "Queries executed successfully.", systemMessage);
+
+            AnalyzeResponse queryResponse = AnalyzeResponse.queryResult(
                     conversationId,
                     aiResponse.getContent(),
+                    queryResults);
+
+            sendSystemResponse(conversationId, wsUser, queryResponse, "SYSTEM_RESPONSE");
+
+            // Check if any query returned data rows before proceeding
+            boolean hasData = queryResults.stream()
+                    .anyMatch(qr -> qr.getData() != null && !qr.getData().isEmpty());
+
+            if (!hasData) {
+                // No data — nothing to analyse or visualise, mark complete
+                sendActivity(conversationId, wsUser, AIActivityPhase.COMPLETED, "success",
+                        "Queries returned no data rows.", systemMessage);
+                return;
+            }
+
+            // ── System Response 2: AI analysis ───────────────────────────────
+            sendActivity(conversationId, wsUser, AIActivityPhase.ANALYZING_DATA, "in_progress",
+                    "AI is analysing your data...", systemMessage);
+
+            DataAnalysisService.AnalysisResult analysisResult = dataAnalysisService.analyzeResults(
+                    aiProvider,
+                    request.getUserMessage(),
                     queryResults,
-                    null // TODO: Visualization suggestion
-            );
+                    chunk -> sendActivity(conversationId, wsUser, AIActivityPhase.ANALYZING_DATA,
+                            "in_progress", chunk, systemMessage));
 
-            Message systemMessageResponse = addSystemMessage(conversationId, JSONObject.fromObject(response).toString(),
-                    wsUser, true, "SYSTEM_RESPONSE");
+            sendActivity(conversationId, wsUser, AIActivityPhase.ANALYZING_DATA, "success",
+                    "Analysis complete.", systemMessage);
 
-            //   messagingTemplate.convertAndSendToUser(wsUser, "/queue/ai/response", systemMessageResponse);
+            AnalyzeResponse analysisResponse = AnalyzeResponse.analysisResponse(
+                    conversationId,
+                    analysisResult.getAnalysis());
+
+            sendSystemResponse(conversationId, wsUser, analysisResponse, "SYSTEM_RESPONSE_ANALYSIS");
+
+            // ── System Response 3: HTML dashboard ────────────────────────────
+            sendActivity(conversationId, wsUser, AIActivityPhase.GENERATING_DASHBOARD, "in_progress",
+                    "Generating visual dashboard...", systemMessage);
+
+            DataAnalysisService.DashboardResult dashboardResult = dataAnalysisService.generateDashboard(
+                    aiProvider,
+                    analysisResult,
+                    queryResults,
+                    chunk -> sendActivity(conversationId, wsUser, AIActivityPhase.GENERATING_DASHBOARD,
+                            "in_progress", chunk, systemMessage));
+
+            sendActivity(conversationId, wsUser, AIActivityPhase.COMPLETED, "success",
+                    "Dashboard ready!", systemMessage);
+
+            AnalyzeResponse dashboardResponse = AnalyzeResponse.dashboardResponse(
+                    conversationId,
+                    dashboardResult.getHtml(),
+                    dashboardResult.getDashboardId());
+
+            sendSystemResponse(conversationId, wsUser, dashboardResponse, "SYSTEM_RESPONSE_UI");
 
         } catch (Exception e) {
             log.error("Error processing message: {}", e.getMessage(), e);
@@ -214,6 +265,19 @@ public class MultiSourceChatOrchestrator {
         }
 
         return schemas;
+    }
+
+    /**
+     * Saves an {@link AnalyzeResponse} as a system message in the DB and then
+     * pushes it to the client's personal WebSocket queue so the frontend receives
+     * it as a distinct chat bubble / card.
+     */
+    private void sendSystemResponse(Long conversationId, String wsUser,
+                                    AnalyzeResponse response, String messageType) {
+        Message saved = addSystemMessage(conversationId,
+                JSONObject.fromObject(response).toString(), wsUser, false, messageType);
+        // Push directly to the client's personal queue so the frontend receives it
+        messagingTemplate.convertAndSendToUser(wsUser, "/queue/ai/response", saved);
     }
 
     private void sendClarificationRequest(Long conversationId, String wsUser, AIResponse aiResponse,

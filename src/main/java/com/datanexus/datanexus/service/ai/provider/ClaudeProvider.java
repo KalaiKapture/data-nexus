@@ -56,8 +56,20 @@ public class ClaudeProvider implements AIProvider {
         }
 
         try {
-            String prompt = AIPromptBuilder.buildPrompt(request,true);
+            String prompt = request.isRawPrompt()
+                    ? (request.getPrompt() != null ? request.getPrompt() : request.getUserMessage())
+                    : AIPromptBuilder.buildPrompt(request, true);
             String responseJson = callClaudeAPI(prompt);
+
+            if (request.isRawPrompt()) {
+                JsonNode root = objectMapper.readTree(responseJson);
+                String text = root.path("content").get(0).path("text").asText();
+                return AIResponse.builder()
+                        .type(AIResponseType.DIRECT_ANSWER)
+                        .content(text)
+                        .build();
+            }
+
             return parseClaudeResponse(responseJson);
 
         } catch (Exception e) {
@@ -76,8 +88,18 @@ public class ClaudeProvider implements AIProvider {
         }
 
         try {
-            String prompt = AIPromptBuilder.buildPrompt(request,true);
+            String prompt = request.isRawPrompt()
+                    ? (request.getPrompt() != null ? request.getPrompt() : request.getUserMessage())
+                    : AIPromptBuilder.buildPrompt(request, true);
             String fullText = streamClaudeAPI(prompt, chunkHandler);
+
+            if (request.isRawPrompt()) {
+                return AIResponse.builder()
+                        .type(AIResponseType.DIRECT_ANSWER)
+                        .content(fullText)
+                        .build();
+            }
+
             return AIResponseParser.parse(fullText, objectMapper);
 
         } catch (Exception e) {

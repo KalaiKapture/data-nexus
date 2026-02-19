@@ -48,8 +48,26 @@ public class ErenAIProvider implements AIProvider {
     @Override
     public AIResponse chat(AIRequest request) {
         try {
-            String prompt = AIPromptBuilder.buildPrompt(request, false);
+            String prompt = resolvePrompt(request);
             String responseJson = callErenAPI(prompt, request);
+
+            if (request.isRawPrompt()) {
+                // Raw prompt: return content directly without JSON parsing
+                try {
+                    String reply = JSONObject.fromObject(responseJson).optString("reply");
+                    String content = (reply != null && !reply.isBlank()) ? reply : responseJson;
+                    return AIResponse.builder()
+                            .type(AIResponseType.DIRECT_ANSWER)
+                            .content(content)
+                            .build();
+                } catch (Exception e) {
+                    return AIResponse.builder()
+                            .type(AIResponseType.DIRECT_ANSWER)
+                            .content(responseJson)
+                            .build();
+                }
+            }
+
             return parseResponse(responseJson);
         } catch (Exception e) {
             log.error("Failed to call Eren API: {}", e.getMessage(), e);
@@ -60,8 +78,21 @@ public class ErenAIProvider implements AIProvider {
         }
     }
 
+    @Override
     public AIResponse streamChat(AIRequest request, StreamChunkHandler chunkHandler) {
         return chat(request);
+    }
+
+    /**
+     * Resolve the prompt text: raw user message for rawPrompt requests,
+     * otherwise the full schema/decision-logic prompt from AIPromptBuilder.
+     */
+    private String resolvePrompt(AIRequest request) {
+        if (request.isRawPrompt()) {
+            // Use the pre-built prompt (analysis / dashboard prompt) — NOT the short userMessage
+            return request.getPrompt() != null ? request.getPrompt() : request.getUserMessage();
+        }
+        return AIPromptBuilder.buildPrompt(request, false);
     }
 
     private String callErenAPI(String prompt, AIRequest request) throws Exception {

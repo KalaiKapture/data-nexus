@@ -11,6 +11,8 @@ public enum AIActivityPhase {
     GENERATING_QUERIES("generating_queries", "Generating safe SELECT queries"),
     EXECUTING_QUERIES("executing_queries", "Executing queries"),
     AI_THINKING("ai_thinking", "AI is thinking..."),
+    ANALYZING_DATA("analyzing_data", "AI is analyzing query results"),
+    GENERATING_DASHBOARD("generating_dashboard", "Generating visual dashboard"),
     PREPARING_RESPONSE("preparing_response", "Preparing response"),
     COMPLETED("completed", "Final answer"),
     ERROR("error", "Error occurred");

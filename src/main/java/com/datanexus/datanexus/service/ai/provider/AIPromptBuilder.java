@@ -6,12 +6,21 @@ import com.datanexus.datanexus.service.datasource.DataSourceType;
 import com.datanexus.datanexus.service.datasource.schema.MCPCapabilities;
 import com.datanexus.datanexus.service.datasource.schema.SourceSchema;
 
+import com.datanexus.datanexus.dto.websocket.AnalyzeResponse;
+import com.datanexus.datanexus.service.ai.DataSummarizer;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import lombok.extern.slf4j.Slf4j;
+
 import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Shared prompt builder used by all AI providers (Gemini, Claude, OpenAI).
  */
+@Slf4j
 public class AIPromptBuilder {
+
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     private AIPromptBuilder() {
     }
@@ -182,6 +191,150 @@ public class AIPromptBuilder {
             mcp.getResources().forEach(resource -> sb.append("  - ").append(resource.getName())
                     .append(" (").append(resource.getUri()).append(")\n"));
         }
+
+        return sb.toString();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Phase 2: Data Analysis Prompt (after query execution)
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /**
+     * Build a prompt that asks the AI to analyze the raw query result data.
+     * The AI returns a JSON with analysis text.
+     */
+    public static String buildAnalysisPrompt(String userQuestion,
+                                             List<AnalyzeResponse.QueryResult> queryResults) {
+        StringBuilder sb = new StringBuilder();
+
+        sb.append("You are a senior data analyst. Queries were executed and you have the structural profile of the results below.\n");
+        sb.append("Your job: Produce a meaningful, business-focused analysis based on what the data represents.\n\n");
+
+        sb.append("=== USER QUESTION ===\n");
+        sb.append(userQuestion).append("\n\n");
+
+        // Structural summary — sensitive columns already redacted by DataSummarizer
+        sb.append("=== DATA STRUCTURE & STATISTICS ===\n");
+        sb.append("NOTE: Columns marked [REDACTED] are sensitive (passwords, emails, tokens etc.) — do NOT mention or analyse their values.\n\n");
+        sb.append(DataSummarizer.buildStructureSummary(queryResults));
+
+        sb.append("=== ANALYSIS RULES ===\n");
+        sb.append("1. FOCUS on business-meaningful columns: numeric metrics, dates, status/category fields, counts.\n");
+        sb.append("2. IGNORE / DO NOT MENTION columns that are: passwords, hashes, tokens, raw email addresses, internal IDs with no analytical meaning.\n");
+        sb.append("3. If the data is a simple lookup/config/auth table (e.g. users with only id+email+password), say so honestly:\n");
+        sb.append("   set analysis to 'This result set is a system/configuration table and does not contain analytical metrics.'\n");
+        sb.append("   and set keyMetrics to just Total Rows, chartSuggestions to [].\n");
+        sb.append("4. For genuinely analytical data (orders, sales, events, logs, metrics): provide rich insights.\n");
+        sb.append("5. Key metrics must use REAL values from the statistics above — not placeholder text.\n");
+        sb.append("6. Chart suggestions only if there are meaningful numeric+categorical/date column pairs to plot.\n");
+        sb.append("7. Use the correct icon emoji for each metric:\n");
+        sb.append("   count/total → 📊, revenue/amount → 💰, average → 📈, date/time → 📅, users → 👤, orders → 🛒, status → 🔵\n\n");
+
+        sb.append("=== RESPONSE FORMAT ===\n");
+        sb.append("Respond with a single valid JSON object — no markdown fences, no extra text:\n");
+        sb.append("{\n");
+        sb.append("  \"title\": \"Short dashboard title based on what the data actually represents (e.g. 'Orders Analytics', 'Revenue by Region')\",\n");
+        sb.append("  \"analysis\": \"Business-focused analysis in markdown. Use ## headers, **bold** for key numbers, - bullet points. Reference actual statistics. Skip sensitive columns entirely.\",\n");
+        sb.append("  \"keyMetrics\": [\n");
+        sb.append("    { \"label\": \"Total Rows\", \"value\": \"<actual rowCount>\", \"icon\": \"📊\" },\n");
+        sb.append("    { \"label\": \"<metric from data>\", \"value\": \"<actual computed value>\", \"icon\": \"<emoji>\" }\n");
+        sb.append("  ],\n");
+        sb.append("  \"chartSuggestions\": [\n");
+        sb.append("    { \"type\": \"bar|line|pie|doughnut\", \"title\": \"<chart title>\", \"xField\": \"<column_name>\", \"yField\": \"<column_name>\", \"datasetIndex\": 0 }\n");
+        sb.append("  ]\n");
+        sb.append("}\n");
+
+        return sb.toString();
+    }
+
+    // ═══════════════════════════════════════════════════════════════════════
+    // Phase 3: Dashboard Chart-Config Prompt  (server owns the HTML skeleton)
+    // ═══════════════════════════════════════════════════════════════════════
+
+    /**
+     * Ask the AI for a rich dashboard configuration JSON.
+     * The server owns all HTML/CSS/JS and renders the page from this config.
+     * The AI specifies: which columns to chart, what aggregation to use,
+     * metric card values, and a visual theme — nothing else.
+     */
+    public static String buildDashboardPrompt(String title,
+                                              String analysis,
+                                              String keyMetricsJson,
+                                              String chartSuggestionsJson,
+                                              List<AnalyzeResponse.QueryResult> queryResults) {
+        StringBuilder sb = new StringBuilder();
+
+        sb.append("You are a senior data analyst. Your job: produce a dashboard configuration JSON.\n");
+        sb.append("The server will render the full HTML from your config — do NOT write any HTML, CSS, or JavaScript.\n\n");
+
+        sb.append("=== DASHBOARD TITLE ===\n").append(title).append("\n\n");
+        sb.append("=== PREVIOUS ANALYSIS ===\n").append(analysis).append("\n\n");
+        sb.append("=== KEY METRICS (from analysis phase) ===\n").append(keyMetricsJson).append("\n\n");
+        sb.append("=== CHART SUGGESTIONS (from analysis phase) ===\n").append(chartSuggestionsJson).append("\n\n");
+
+        sb.append("=== DATA STRUCTURE & STATISTICS ===\n");
+        sb.append("IMPORTANT: Use ONLY exact column names listed here. isNumeric=true means the column has real numbers.\n\n");
+        sb.append(DataSummarizer.buildStructureSummary(queryResults));
+
+        sb.append("=== CHART CONFIGURATION RULES ===\n");
+        sb.append("You must specify as many meaningful charts as the data supports (up to 5). Be creative — vary the chart types.\n\n");
+
+        sb.append("Allowed chart types and their required fields:\n");
+        sb.append("  \"bar\"      → xField (string/date col), yField (numeric col), optional: aggregation (\"sum\"|\"avg\"|\"count\"|\"max\"|\"min\")\n");
+        sb.append("  \"line\"     → xField (date/ordered col), yField (numeric col), optional: aggregation\n");
+        sb.append("  \"pie\"      → labelField (string/category col), valueField (numeric col), optional: aggregation\n");
+        sb.append("  \"doughnut\" → labelField (string/category col), valueField (numeric col), optional: aggregation\n");
+        sb.append("  \"scatter\"  → xField (numeric col), yField (numeric col) — no aggregation\n\n");
+
+        sb.append("CRITICAL chart rules:\n");
+        sb.append("  - yField / valueField MUST be a column where isNumeric=true. Never use a string column as a value.\n");
+        sb.append("  - xField for bar/line should be a low-cardinality string or date (not an ID with thousands of unique values).\n");
+        sb.append("  - labelField for pie/doughnut: max ~10 distinct values is ideal.\n");
+        sb.append("  - aggregation: use 'count' when you want to count how many rows share an xField value.\n");
+        sb.append("    Use 'sum'/'avg' when yField is a real measure (price, quantity, duration, score).\n");
+        sb.append("  - If only one numeric column exists, you may use aggregation:'count' with a string xField.\n");
+        sb.append("  - No charts if the data is purely a config/auth table (only id/email/password columns).\n\n");
+
+        sb.append("=== METRIC CARD RULES ===\n");
+        sb.append("  - Always include 'Total Records' as first metric with the actual rowCount.\n");
+        sb.append("  - Add 2–4 more metrics using REAL numbers from the statistics (min, max, avg, sum, distinct counts).\n");
+        sb.append("  - Never use empty string or null for value.\n");
+        sb.append("  - Icon options: 📊 count/total, 💰 revenue/amount, 📈 average/growth, 📅 date/time, 👤 users, 🛒 orders, ⏱ duration, 🔢 numeric metric\n\n");
+
+        sb.append("=== THEME ===\n");
+        sb.append("Choose ONE theme that fits the data domain:\n");
+        sb.append("  \"blue\"   — corporate/finance/sales data\n");
+        sb.append("  \"green\"  — health/environment/growth data\n");
+        sb.append("  \"purple\" — tech/analytics/product data\n");
+        sb.append("  \"orange\" — retail/ecommerce/operations data\n\n");
+
+        sb.append("=== RESPONSE FORMAT ===\n");
+        sb.append("Single valid JSON object only. No markdown fences. No extra text before or after.\n\n");
+        sb.append("{\n");
+        sb.append("  \"theme\": \"blue\",\n");
+        sb.append("  \"metrics\": [\n");
+        sb.append("    { \"label\": \"Total Records\", \"value\": \"<actual rowCount>\", \"icon\": \"📊\" },\n");
+        sb.append("    { \"label\": \"<meaningful metric>\", \"value\": \"<real computed value>\", \"icon\": \"<emoji>\" }\n");
+        sb.append("  ],\n");
+        sb.append("  \"charts\": [\n");
+        sb.append("    {\n");
+        sb.append("      \"type\": \"bar\",\n");
+        sb.append("      \"title\": \"<descriptive chart title>\",\n");
+        sb.append("      \"datasetIndex\": 0,\n");
+        sb.append("      \"xField\": \"<exact column name — string/date>\",\n");
+        sb.append("      \"yField\": \"<exact column name — isNumeric=true ONLY>\",\n");
+        sb.append("      \"aggregation\": \"sum\"\n");
+        sb.append("    },\n");
+        sb.append("    {\n");
+        sb.append("      \"type\": \"pie\",\n");
+        sb.append("      \"title\": \"<descriptive chart title>\",\n");
+        sb.append("      \"datasetIndex\": 0,\n");
+        sb.append("      \"labelField\": \"<exact column name — string/category>\",\n");
+        sb.append("      \"valueField\": \"<exact column name — isNumeric=true ONLY>\",\n");
+        sb.append("      \"aggregation\": \"count\"\n");
+        sb.append("    }\n");
+        sb.append("  ]\n");
+        sb.append("}\n");
 
         return sb.toString();
     }

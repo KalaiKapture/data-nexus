@@ -60,8 +60,20 @@ public class OpenAIProvider implements AIProvider {
         }
 
         try {
-            String prompt = AIPromptBuilder.buildPrompt(request, true);
-            String responseJson = callOpenAIAPI(prompt);
+            String prompt = resolvePrompt(request);
+            boolean jsonMode = !request.isRawPrompt();
+            String responseJson = callOpenAIAPI(prompt, jsonMode);
+
+            if (request.isRawPrompt()) {
+                // Raw prompt: return content directly without JSON parsing
+                JsonNode root = objectMapper.readTree(responseJson);
+                String content = root.path("choices").get(0).path("message").path("content").asText();
+                return AIResponse.builder()
+                        .type(AIResponseType.DIRECT_ANSWER)
+                        .content(content)
+                        .build();
+            }
+
             return parseOpenAIResponse(responseJson);
 
         } catch (Exception e) {
@@ -80,8 +92,17 @@ public class OpenAIProvider implements AIProvider {
         }
 
         try {
-            String prompt = AIPromptBuilder.buildPrompt(request, true);
+            String prompt = resolvePrompt(request);
             String fullText = streamOpenAIAPI(prompt, chunkHandler);
+
+            if (request.isRawPrompt()) {
+                // Raw prompt: return content directly without JSON parsing
+                return AIResponse.builder()
+                        .type(AIResponseType.DIRECT_ANSWER)
+                        .content(fullText)
+                        .build();
+            }
+
             return AIResponseParser.parse(fullText, objectMapper);
 
         } catch (Exception e) {
@@ -93,17 +114,34 @@ public class OpenAIProvider implements AIProvider {
         }
     }
 
+    /**
+     * Resolve the prompt text: raw user message for rawPrompt requests,
+     * otherwise the full schema/decision-logic prompt from AIPromptBuilder.
+     */
+    private String resolvePrompt(AIRequest request) {
+        if (request.isRawPrompt()) {
+            // Use the pre-built prompt (analysis / dashboard prompt) — NOT the short userMessage
+            return request.getPrompt() != null ? request.getPrompt() : request.getUserMessage();
+        }
+        return AIPromptBuilder.buildPrompt(request, true);
+    }
+
     // ── Non-streaming API call ──────────────────────────────────────────
 
-    private String callOpenAIAPI(String prompt) throws Exception {
-        Map<String, Object> payload = Map.of(
-                "model", model,
-                "messages", List.of(
-                        Map.of("role", "system", "content",
-                                "You are a data analyst assistant. Always respond with valid JSON."),
-                        Map.of("role", "user", "content", prompt)),
-                "temperature", 0.2,
-                "response_format", Map.of("type", "json_object"));
+    private String callOpenAIAPI(String prompt, boolean jsonMode) throws Exception {
+        String systemMsg = jsonMode
+                ? "You are a data analyst assistant. Always respond with valid JSON."
+                : "You are a data analyst assistant.";
+
+        Map<String, Object> payload = new HashMap<>();
+        payload.put("model", model);
+        payload.put("messages", List.of(
+                Map.of("role", "system", "content", systemMsg),
+                Map.of("role", "user", "content", prompt)));
+        payload.put("temperature", 0.2);
+        if (jsonMode) {
+            payload.put("response_format", Map.of("type", "json_object"));
+        }
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(apiUrl))
@@ -136,13 +174,16 @@ public class OpenAIProvider implements AIProvider {
      * Stream ends with: data: [DONE]
      */
     private String streamOpenAIAPI(String prompt, StreamChunkHandler chunkHandler) throws Exception {
+        // Note: streaming doesn't support response_format, so we rely on the system
+        // message to guide the model. For raw prompts, we drop the JSON instruction.
+        String systemMsg = "You are a data analyst assistant.";
+
         Map<String, Object> payload = new HashMap<>();
         payload.put("model", model);
         payload.put("stream", true);
         payload.put("temperature", 0.2);
         payload.put("messages", List.of(
-                Map.of("role", "system", "content",
-                        "You are a data analyst assistant. Always respond with valid JSON."),
+                Map.of("role", "system", "content", systemMsg),
                 Map.of("role", "user", "content", prompt)));
 
         HttpRequest request = HttpRequest.newBuilder()

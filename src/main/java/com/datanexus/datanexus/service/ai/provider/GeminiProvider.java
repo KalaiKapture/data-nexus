@@ -56,8 +56,8 @@ public class GeminiProvider implements AIProvider {
         }
 
         try {
-            String prompt = AIPromptBuilder.buildPrompt(request,true);
-            String responseJson = callGeminiAPI(prompt);
+            String prompt = resolvePrompt(request);
+            String responseJson = callGeminiAPI(prompt, !request.isRawPrompt());
             return parseGeminiResponse(responseJson);
 
         } catch (Exception e) {
@@ -76,8 +76,17 @@ public class GeminiProvider implements AIProvider {
         }
 
         try {
-            String prompt = AIPromptBuilder.buildPrompt(request,true);
-            String fullText = streamGeminiAPI(prompt, chunkHandler);
+            String prompt = resolvePrompt(request);
+            String fullText = streamGeminiAPI(prompt, chunkHandler, !request.isRawPrompt());
+
+            if (request.isRawPrompt()) {
+                // Raw prompt — return content directly without JSON parsing
+                return AIResponse.builder()
+                        .type(AIResponseType.DIRECT_ANSWER)
+                        .content(fullText)
+                        .build();
+            }
+
             return AIResponseParser.parse(fullText, objectMapper);
 
         } catch (Exception e) {
@@ -89,18 +98,28 @@ public class GeminiProvider implements AIProvider {
         }
     }
 
+    private String resolvePrompt(AIRequest request) {
+        if (request.isRawPrompt()) {
+            // Use the pre-built prompt (analysis / dashboard prompt) — NOT the short userMessage
+            return request.getPrompt() != null ? request.getPrompt() : request.getUserMessage();
+        }
+        return AIPromptBuilder.buildPrompt(request, true);
+    }
+
     // ── Non-streaming API call ──────────────────────────────────────────
 
-    private String callGeminiAPI(String prompt) throws Exception {
+    private String callGeminiAPI(String prompt, boolean jsonMime) throws Exception {
         String url = "https://generativelanguage.googleapis.com/v1beta/models/"
                 + model + ":generateContent?key=" + apiKey;
+
+        Map<String, Object> genConfig = jsonMime
+                ? Map.of("temperature", 0.2, "responseMimeType", "application/json")
+                : Map.of("temperature", 0.2);
 
         Map<String, Object> payload = Map.of(
                 "contents", List.of(
                         Map.of("parts", List.of(Map.of("text", prompt)))),
-                "generationConfig", Map.of(
-                        "temperature", 0.2,
-                        "responseMimeType", "application/json"));
+                "generationConfig", genConfig);
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(url))
@@ -132,16 +151,18 @@ public class GeminiProvider implements AIProvider {
      * Each SSE data line contains a JSON object with
      * candidates[0].content.parts[0].text.
      */
-    private String streamGeminiAPI(String prompt, StreamChunkHandler chunkHandler) throws Exception {
+    private String streamGeminiAPI(String prompt, StreamChunkHandler chunkHandler, boolean jsonMime) throws Exception {
         String url = "https://generativelanguage.googleapis.com/v1beta/models/"
                 + model + ":streamGenerateContent?alt=sse&key=" + apiKey;
+
+        Map<String, Object> genConfig = jsonMime
+                ? Map.of("temperature", 0.2, "responseMimeType", "application/json")
+                : Map.of("temperature", 0.2);
 
         Map<String, Object> payload = Map.of(
                 "contents", List.of(
                         Map.of("parts", List.of(Map.of("text", prompt)))),
-                "generationConfig", Map.of(
-                        "temperature", 0.2,
-                        "responseMimeType", "application/json"));
+                "generationConfig", genConfig);
 
         HttpRequest request = HttpRequest.newBuilder()
                 .uri(URI.create(url))

@@ -44,4 +44,16 @@ public class MessageRepository {
     public List<Message> findByConversationIdOrderByCreatedAtAsc(Long conversationId) {
         return findByConversationId(conversationId);
     }
+
+    /**
+     * Find a message by its primary key (id).
+     * Used by DashboardController to return the full Message to the UI.
+     */
+    public Message findById(Long id) {
+        List<Message> results = PSQLUtil.runQuery(
+                "FROM Message m WHERE m.id = :id",
+                Map.of("id", id),
+                Message.class);
+        return results.isEmpty() ? null : results.get(0);
+    }
 }
