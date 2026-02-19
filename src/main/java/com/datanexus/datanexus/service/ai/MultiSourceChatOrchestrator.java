@@ -240,8 +240,8 @@ public class MultiSourceChatOrchestrator {
                         continue;
                     }
 
-                    // Cache miss: fall back to live extraction
-                    log.info("Cache miss for connection {}, extracting live schema", connId);
+                    // Schema is served from the LLM model service — extract live for prompt context
+                    log.info("Extracting live schema for connection {}", connId);
                     DatabaseConnection conn = connectionRepository.findByIdAndUserId(connId, user.getId());
                     if (conn == null) {
                         log.warn("Connection {} not found for user {}", connId, user.getId());
@@ -251,11 +251,11 @@ public class MultiSourceChatOrchestrator {
                     DataSource dataSource = dataSourceRegistry.getDataSource(conn);
                     if (dataSource != null && dataSource.isAvailable()) {
                         schemas.add(dataSource.extractSchema());
-                        // Auto-cache for next time
+                        // Train the LLM model service with this connection's schema
                         try {
                             schemaCacheService.cacheSchema(connId, user.getId());
                         } catch (Exception cacheEx) {
-                            log.warn("Failed to auto-cache schema for connection {}: {}", connId, cacheEx.getMessage());
+                            log.warn("Failed to train schema for connection {}: {}", connId, cacheEx.getMessage());
                         }
                     }
                 } catch (Exception e) {
